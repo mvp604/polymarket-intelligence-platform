@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import requests
+import sqlite3
+from database import count_wallet_scans, save_wallet_scan
 
 
 DATA_API_URL = "https://data-api.polymarket.com"
@@ -9,6 +11,7 @@ REQUEST_TIMEOUT = 20
 
 def shorten_wallet(wallet: str) -> str:
     """Display a wallet address in a shorter, easier-to-read format."""
+
     if len(wallet) < 14:
         return wallet
 
@@ -41,6 +44,7 @@ def fetch_positions(wallet: str, limit: int = 20) -> list[dict]:
 
 def safe_number(value: object) -> float:
     """Convert API values to numbers without crashing."""
+
     try:
         return float(value or 0)
     except (TypeError, ValueError):
@@ -104,16 +108,26 @@ def main() -> None:
 
     try:
         positions = fetch_positions(wallet)
+
+        scan_id = save_wallet_scan(wallet, positions)
+        total_scans = count_wallet_scans(wallet)
+
         display_positions(wallet, positions)
+
+        print()
+        print("DATABASE SAVE COMPLETE")
+        print(f"Scan ID: {scan_id}")
+        print(f"Stored scans for this wallet: {total_scans}")
+        print(f"Positions saved: {len(positions)}")
 
     except requests.RequestException as error:
         print()
         print("Could not retrieve the wallet positions.")
         print(f"Error: {error}")
 
-    except ValueError as error:
+    except (ValueError, RuntimeError, sqlite3.Error) as error:
         print()
-        print(f"Data error: {error}")
+        print(f"Data or database error: {error}")
 
 
 if __name__ == "__main__":
