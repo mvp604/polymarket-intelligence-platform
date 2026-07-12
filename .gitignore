@@ -15,4 +15,4 @@ __pycache__/
 logs/
 
 # Database
-*.db
+database/*.db
