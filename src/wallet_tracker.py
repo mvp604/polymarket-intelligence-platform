@@ -1,8 +1,15 @@
 from __future__ import annotations
+from copy import error
 
 import requests
 import sqlite3
-from database import count_wallet_scans, save_wallet_scan
+from change_detector import compare_positions, display_changes
+from database import (
+    count_wallet_scans,
+    get_positions_for_scan,
+    get_previous_scan_id,
+    save_wallet_scan,
+)
 
 
 DATA_API_URL = "https://data-api.polymarket.com"
@@ -108,11 +115,31 @@ def main() -> None:
 
     try:
         positions = fetch_positions(wallet)
-
         scan_id = save_wallet_scan(wallet, positions)
         total_scans = count_wallet_scans(wallet)
 
         display_positions(wallet, positions)
+
+        previous_scan_id = get_previous_scan_id(wallet, scan_id)
+
+        if previous_scan_id is None:
+            print()
+            print("=" * 76)
+            print("CHANGE DETECTOR")
+            print("=" * 76)
+            print("This is the first stored scan for this wallet.")
+            print("Run the wallet tracker again later to detect changes.")
+            print("=" * 76)
+        else:
+            previous_positions = get_positions_for_scan(previous_scan_id)
+            current_positions = get_positions_for_scan(scan_id)
+
+            changes = compare_positions(
+                previous_positions=previous_positions,
+                current_positions=current_positions,
+            )
+
+            display_changes(changes)
 
         print()
         print("DATABASE SAVE COMPLETE")

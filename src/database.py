@@ -165,7 +165,57 @@ def count_wallet_scans(wallet: str) -> int:
 
     return int(row["total"]) if row else 0
 
+def get_previous_scan_id(wallet: str, current_scan_id: int) -> int | None:
+    """Return the scan immediately before the current scan."""
 
+    connection = connect_database()
+
+    row = connection.execute(
+        """
+        SELECT id
+        FROM wallet_scans
+        WHERE wallet = ?
+          AND id < ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (wallet, current_scan_id),
+    ).fetchone()
+
+    connection.close()
+
+    if row is None:
+        return None
+
+    return int(row["id"])
+
+
+def get_positions_for_scan(scan_id: int) -> list[dict]:
+    """Return all stored positions belonging to one scan."""
+
+    connection = connect_database()
+
+    rows = connection.execute(
+        """
+        SELECT
+            market_id,
+            title,
+            outcome,
+            shares,
+            average_price,
+            current_price,
+            current_value,
+            cash_pnl,
+            percent_pnl
+        FROM positions
+        WHERE scan_id = ?
+        """,
+        (scan_id,),
+    ).fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]
 if __name__ == "__main__":
     create_tables()
     print("SQLite database created successfully.")
