@@ -92,7 +92,7 @@ def display_traders(traders: list[dict]) -> None:
         print()
         print(f"Rank:      {rank}")
         print(f"Trader:    {username}")
-        print(f"Wallet:    {shorten_wallet(wallet)}")
+        print(f"Wallet: {wallet}")
         print(f"PnL:       ${pnl:,.2f}")
         print(f"Volume:    ${volume:,.2f}")
         print("-" * 76)
