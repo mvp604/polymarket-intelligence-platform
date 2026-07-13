@@ -56,6 +56,27 @@ def create_tables() -> None:
         """
     )
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS consensus_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            wallet_count INTEGER NOT NULL,
+            combined_shares REAL NOT NULL,
+            combined_value REAL NOT NULL,
+            combined_pnl REAL NOT NULL,
+            conviction_score REAL NOT NULL,
+            conviction_grade TEXT NOT NULL,
+            average_entry_price REAL,
+            average_current_price REAL,
+            observed_price_move REAL,
+            scanned_at TEXT NOT NULL
+        )
+        """
+    )
+
     connection.commit()
     connection.close()
 
