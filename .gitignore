@@ -16,3 +16,7 @@ logs/
 
 # Database
 database/*.db
+
+# Generated research reports
+reports/*.md
+reports/*.json
