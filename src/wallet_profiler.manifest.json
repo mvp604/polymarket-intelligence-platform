@@ -1,0 +1,15 @@
+﻿{
+  "id": "wallet_profiler",
+  "name": "Elite Wallet Profiler",
+  "version": "1.0.0",
+  "runner": "run_wallet_profiler.ps1",
+  "enabled": true,
+  "required": true,
+  "stage": "intelligence",
+  "order": 45,
+  "dependencies": [
+    "elite_wallet_database"
+  ],
+  "latest_report": "reports/wallet_profiler/latest.html",
+  "timeout_seconds": 900
+}

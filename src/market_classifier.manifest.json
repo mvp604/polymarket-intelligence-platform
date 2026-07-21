@@ -1,0 +1,15 @@
+﻿{
+  "id": "market_classifier",
+  "name": "Market Classification Engine",
+  "version": "1.0.0",
+  "runner": "run_market_classifier.ps1",
+  "enabled": true,
+  "required": true,
+  "stage": "intelligence",
+  "order": 42,
+  "dependencies": [
+    "elite_wallet_database"
+  ],
+  "latest_report": "reports/market_classification/latest.html",
+  "timeout_seconds": 900
+}

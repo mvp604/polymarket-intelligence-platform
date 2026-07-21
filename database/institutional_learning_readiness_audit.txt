@@ -1,0 +1,3034 @@
+========================================================================================================================
+POLYMARKET INSTITUTIONAL LEARNING ENGINE ? READINESS AUDIT
+========================================================================================================================
+Database: C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\database\polymarket.db
+All tables: 178
+Candidate learning tables: 30
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: backtest_results
+ROWS:  64
+JOIN KEYS: market_id, winning_outcome
+FEATURES: wallet_count
+OUTCOMES: winning_outcome
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - selected_outcome: TEXT | NOT NULL
+  - winning_outcome: TEXT
+  - first_signal_at: TEXT | NOT NULL
+  - market_closed_at: TEXT
+  - entry_price: REAL | NOT NULL
+  - conviction_score: REAL | NOT NULL
+  - conviction_grade: TEXT | NOT NULL
+  - wallet_count: INTEGER | NOT NULL
+  - hypothetical_stake: REAL | NOT NULL
+  - hypothetical_profit: REAL
+  - hypothetical_return_pct: REAL
+  - result_status: TEXT | NOT NULL
+  - evaluated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_backtest_results_score (unique=False)
+  - idx_backtest_results_status (unique=False)
+  - sqlite_autoindex_backtest_results_1 (unique=True)
+
+SAMPLE ROWS:
+  {"market_id": "0x0bbc63372aaf0867db23fc361b4e37f7d3125c7acef6cc8e2d5ce40f65b7e523", "wallet_count": 2, "winning_outcome": null}
+  {"market_id": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f", "wallet_count": 4, "winning_outcome": null}
+  {"market_id": "0x20fac1c925b7a2fed6b3b2736f47a800b4d0d4001b9deaeb7b918868eb63d081", "wallet_count": 3, "winning_outcome": null}
+
+CREATE SQL:
+CREATE TABLE backtest_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                selected_outcome TEXT NOT NULL,
+                winning_outcome TEXT,
+                first_signal_at TEXT NOT NULL,
+                market_closed_at TEXT,
+                entry_price REAL NOT NULL,
+                conviction_score REAL NOT NULL,
+                conviction_grade TEXT NOT NULL,
+                wallet_count INTEGER NOT NULL,
+                hypothetical_stake REAL NOT NULL,
+                hypothetical_profit REAL,
+                hypothetical_return_pct REAL,
+                result_status TEXT NOT NULL,
+                evaluated_at TEXT NOT NULL,
+                UNIQUE (
+                    market_id,
+                    selected_outcome,
+                    first_signal_at
+                )
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: candidate_wallet_evaluations
+ROWS:  920
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - wallet: TEXT | PRIMARY KEY
+  - evaluation_score: REAL | NOT NULL, DEFAULT 0
+  - evaluation_grade: TEXT | NOT NULL, DEFAULT 'PASS'
+  - recommended_status: TEXT | NOT NULL, DEFAULT 'CANDIDATE'
+  - current_status: TEXT | NOT NULL, DEFAULT 'CANDIDATE'
+  - status_changed: INTEGER | NOT NULL, DEFAULT 0
+  - qualification_ready: INTEGER | NOT NULL, DEFAULT 0
+  - needs_position_scan: INTEGER | NOT NULL, DEFAULT 1
+  - needs_history_scan: INTEGER | NOT NULL, DEFAULT 1
+  - needs_manual_review: INTEGER | NOT NULL, DEFAULT 0
+  - discovery_score: REAL | NOT NULL, DEFAULT 0
+  - leaderboard_score: REAL | NOT NULL, DEFAULT 0
+  - recurrence_score: REAL | NOT NULL, DEFAULT 0
+  - rank_quality_score: REAL | NOT NULL, DEFAULT 0
+  - pnl_quality_score: REAL | NOT NULL, DEFAULT 0
+  - volume_quality_score: REAL | NOT NULL, DEFAULT 0
+  - sports_relevance_score: REAL | NOT NULL, DEFAULT 0
+  - analytical_evidence_score: REAL | NOT NULL, DEFAULT 0
+  - alpha_score: REAL
+  - alpha_grade: TEXT
+  - alpha_confidence: TEXT
+  - elite_influence_score: REAL
+  - elite_tier: TEXT
+  - performance_score: REAL
+  - performance_grade: TEXT
+  - dna_score: REAL
+  - dna_grade: TEXT
+  - ledger_quality_score: REAL
+  - ledger_confidence: TEXT
+  - trade_event_count: INTEGER | NOT NULL, DEFAULT 0
+  - closed_position_count: INTEGER | NOT NULL, DEFAULT 0
+  - resolved_positions: INTEGER | NOT NULL, DEFAULT 0
+  - leaderboard_appearances: INTEGER | NOT NULL, DEFAULT 0
+  - best_rank: INTEGER
+  - weekly_pnl_appearances: INTEGER | NOT NULL, DEFAULT 0
+  - weekly_volume_appearances: INTEGER | NOT NULL, DEFAULT 0
+  - monthly_pnl_appearances: INTEGER | NOT NULL, DEFAULT 0
+  - all_time_pnl_appearances: INTEGER | NOT NULL, DEFAULT 0
+  - sports_appearances: INTEGER | NOT NULL, DEFAULT 0
+  - latest_pnl: REAL | NOT NULL, DEFAULT 0
+  - best_observed_pnl: REAL | NOT NULL, DEFAULT 0
+  - latest_volume: REAL | NOT NULL, DEFAULT 0
+  - highest_observed_volume: REAL | NOT NULL, DEFAULT 0
+  - positive_evidence_count: INTEGER | NOT NULL, DEFAULT 0
+  - risk_flag_count: INTEGER | NOT NULL, DEFAULT 0
+  - positive_evidence_json: TEXT
+  - risk_flags_json: TEXT
+  - explanation_json: TEXT
+  - evaluated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_candidate_wallet_evaluations_status (unique=False)
+  - idx_candidate_wallet_evaluations_score (unique=False)
+  - sqlite_autoindex_candidate_wallet_evaluations_1 (unique=True)
+
+CREATE SQL:
+CREATE TABLE candidate_wallet_evaluations (
+                wallet TEXT PRIMARY KEY,
+
+                evaluation_score REAL
+                    NOT NULL DEFAULT 0,
+
+                evaluation_grade TEXT
+                    NOT NULL DEFAULT 'PASS',
+
+                recommended_status TEXT
+                    NOT NULL DEFAULT 'CANDIDATE',
+
+                current_status TEXT
+                    NOT NULL DEFAULT 'CANDIDATE',
+
+                status_changed INTEGER
+                    NOT NULL DEFAULT 0,
+
+                qualification_ready INTEGER
+                    NOT NULL DEFAULT 0,
+
+                needs_position_scan INTEGER
+                    NOT NULL DEFAULT 1,
+
+                needs_history_scan INTEGER
+                    NOT NULL DEFAULT 1,
+
+                needs_manual_review INTEGER
+                    NOT NULL DEFAULT 0,
+
+                discovery_score REAL
+                    NOT NULL DEFAULT 0,
+
+                leaderboard_score REAL
+                    NOT NULL DEFAULT 0,
+
+                recurrence_score REAL
+                    NOT NULL DEFAULT 0,
+
+                rank_quality_score REAL
+                    NOT NULL DEFAULT 0,
+
+                pnl_quality_score REAL
+                    NOT NULL DEFAULT 0,
+
+                volume_quality_score REAL
+                    NOT NULL DEFAULT 0,
+
+                sports_relevance_score REAL
+                    NOT NULL DEFAULT 0,
+
+                analytical_evidence_score REAL
+                    NOT NULL DEFAULT 0,
+
+                alpha_score REAL,
+                alpha_grade TEXT,
+                alpha_confidence TEXT,
+
+                elite_influence_score REAL,
+                elite_tier TEXT,
+
+                performance_score REAL,
+                performance_grade TEXT,
+
+                dna_score REAL,
+                dna_grade TEXT,
+
+                ledger_quality_score REAL,
+                ledger_confidence TEXT,
+
+                trade_event_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                closed_position_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolved_positions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                leaderboard_appearances INTEGER
+                    NOT NULL DEFAULT 0,
+
+                best_rank INTEGER,
+
+                weekly_pnl_appearances INTEGER
+                    NOT NULL DEFAULT 0,
+
+                weekly_volume_appearances INTEGER
+                    NOT NULL DEFAULT 0,
+
+                monthly_pnl_appearances INTEGER
+                    NOT NULL DEFAULT 0,
+
+                all_time_pnl_appearances INTEGER
+                    NOT NULL DEFAULT 0,
+
+                sports_appearances INTEGER
+                    NOT NULL DEFAULT 0,
+
+                latest_pnl REAL
+                    NOT NULL DEFAULT 0,
+
+                best_observed_pnl REAL
+                    NOT NULL DEFAULT 0,
+
+                latest_volume REAL
+                    NOT NULL DEFAULT 0,
+
+                highest_observed_volume REAL
+                    NOT NULL DEFAULT 0,
+
+                positive_evidence_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                risk_flag_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                positive_evidence_json TEXT,
+                risk_flags_json TEXT,
+                explanation_json TEXT,
+
+                evaluated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_diagnostic_history
+ROWS:  131
+JOIN KEYS: opportunity_key, market_id, outcome, run_id
+FEATURES: decision_score, decision_grade, actionability_score, confidence, trust_quality_score, entry_quality_score, market_structure_score, data_quality_score, wallet_count, elite_wallet_count
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - opportunity_key: TEXT | NOT NULL
+  - market_id: TEXT
+  - title: TEXT | NOT NULL
+  - outcome: TEXT
+  - current_action: TEXT | NOT NULL
+  - decision_grade: TEXT
+  - decision_score: REAL | NOT NULL, DEFAULT 0
+  - actionability_score: REAL | NOT NULL, DEFAULT 0
+  - confidence: REAL | NOT NULL, DEFAULT 0
+  - entry_quality_score: REAL | NOT NULL, DEFAULT 0
+  - market_structure_score: REAL | NOT NULL, DEFAULT 0
+  - trust_quality_score: REAL | NOT NULL, DEFAULT 0
+  - data_quality_score: REAL | NOT NULL, DEFAULT 0
+  - wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - elite_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - supporting_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - trusted_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - hard_veto: INTEGER | NOT NULL, DEFAULT 0
+  - buy_requirements_passed: INTEGER | NOT NULL, DEFAULT 0
+  - buy_requirements_failed: INTEGER | NOT NULL, DEFAULT 0
+  - watch_requirements_passed: INTEGER | NOT NULL, DEFAULT 0
+  - watch_requirements_failed: INTEGER | NOT NULL, DEFAULT 0
+  - buy_gap_score: REAL | NOT NULL, DEFAULT 0
+  - watch_gap_score: REAL | NOT NULL, DEFAULT 0
+  - nearest_upgrade: TEXT | NOT NULL
+  - upgrade_difficulty: TEXT | NOT NULL
+  - primary_blocker: TEXT | NOT NULL
+  - secondary_blocker: TEXT
+  - blocker_category: TEXT | NOT NULL
+  - failed_buy_requirements_json: TEXT | NOT NULL
+  - failed_watch_requirements_json: TEXT | NOT NULL
+  - veto_reasons_json: TEXT | NOT NULL
+  - positive_reasons_json: TEXT | NOT NULL
+  - risk_flags_json: TEXT | NOT NULL
+  - upgrade_actions_json: TEXT | NOT NULL
+  - diagnostic_summary: TEXT | NOT NULL
+  - source_calculated_at: TEXT
+  - diagnosed_at: TEXT | NOT NULL
+  - run_id: TEXT | NOT NULL
+
+INDEXES:
+  - idx_decision_diagnostic_history_run (unique=False)
+  - idx_decision_diagnostic_history_key (unique=False)
+
+SAMPLE ROWS:
+  {"actionability_score": 72.7317, "confidence": 69.7165, "data_quality_score": 83.1946, "decision_grade": "B+", "decision_score": 67.6847, "elite_wallet_count": 1, "entry_quality_score": 70.254, "market_id": "0xcc2bd1a1bdcdc5c0791c5140f7fbfa15daa9e7fd1ae2666c87a4be91f3d533f5", "market_structure_score": 84.0, "opportunity_key": "0xcc2bd1a1bdcdc5c0791c5140f7fbfa15daa9e7fd1ae2666c87a4be91f3d533f5:yes", "outcome": "Yes", "run_id": "ec739af0fa38485893e5a8e33c461ef3", "trust_quality_score": 43.7758, "wallet_count": 1}
+  {"actionability_score": 77.0128, "confidence": 81.0402, "data_quality_score": 94.4446, "decision_grade": "B+", "decision_score": 66.655, "elite_wallet_count": 1, "entry_quality_score": 71.6891, "market_id": "0x56d4ad6146b2554fe2c6800df1352391cec841039006d42b3614a591a13afe99", "market_structure_score": 89.6103, "opportunity_key": "0x56d4ad6146b2554fe2c6800df1352391cec841039006d42b3614a591a13afe99:yes", "outcome": "Yes", "run_id": "ec739af0fa38485893e5a8e33c461ef3", "trust_quality_score": 40.1186, "wallet_count": 1}
+  {"actionability_score": 76.6885, "confidence": 81.0402, "data_quality_score": 94.4446, "decision_grade": "B+", "decision_score": 66.6148, "elite_wallet_count": 1, "entry_quality_score": 70.6472, "market_id": "0xa1ce91a96da0580d6f694d11d6abd6a615a451fd53be6dba898c1d25fcce645a", "market_structure_score": 89.2649, "opportunity_key": "0xa1ce91a96da0580d6f694d11d6abd6a615a451fd53be6dba898c1d25fcce645a:yes", "outcome": "Yes", "run_id": "ec739af0fa38485893e5a8e33c461ef3", "trust_quality_score": 40.1186, "wallet_count": 1}
+
+CREATE SQL:
+CREATE TABLE institutional_decision_diagnostic_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            opportunity_key TEXT NOT NULL,
+            market_id TEXT,
+            title TEXT NOT NULL,
+            outcome TEXT,
+
+            current_action TEXT NOT NULL,
+            decision_grade TEXT,
+
+            decision_score REAL NOT NULL DEFAULT 0,
+            actionability_score REAL NOT NULL DEFAULT 0,
+            confidence REAL NOT NULL DEFAULT 0,
+
+            entry_quality_score REAL NOT NULL DEFAULT 0,
+            market_structure_score REAL NOT NULL DEFAULT 0,
+            trust_quality_score REAL NOT NULL DEFAULT 0,
+            data_quality_score REAL NOT NULL DEFAULT 0,
+
+            wallet_count INTEGER NOT NULL DEFAULT 0,
+            elite_wallet_count INTEGER NOT NULL DEFAULT 0,
+            supporting_wallet_count INTEGER NOT NULL DEFAULT 0,
+            trusted_wallet_count INTEGER NOT NULL DEFAULT 0,
+
+            hard_veto INTEGER NOT NULL DEFAULT 0,
+
+            buy_requirements_passed INTEGER NOT NULL DEFAULT 0,
+            buy_requirements_failed INTEGER NOT NULL DEFAULT 0,
+
+            watch_requirements_passed INTEGER NOT NULL DEFAULT 0,
+            watch_requirements_failed INTEGER NOT NULL DEFAULT 0,
+
+            buy_gap_score REAL NOT NULL DEFAULT 0,
+            watch_gap_score REAL NOT NULL DEFAULT 0,
+
+            nearest_upgrade TEXT NOT NULL,
+            upgrade_difficulty TEXT NOT NULL,
+
+            primary_blocker TEXT NOT NULL,
+            secondary_blocker TEXT,
+            blocker_category TEXT NOT NULL,
+
+            failed_buy_requirements_json TEXT NOT NULL,
+            failed_watch_requirements_json TEXT NOT NULL,
+
+            veto_reasons_json TEXT NOT NULL,
+            positive_reasons_json TEXT NOT NULL,
+            risk_flags_json TEXT NOT NULL,
+            upgrade_actions_json TEXT NOT NULL,
+
+            diagnostic_summary TEXT NOT NULL,
+
+            source_calculated_at TEXT,
+            diagnosed_at TEXT NOT NULL,
+            run_id TEXT NOT NULL
+        )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_diagnostic_runs
+ROWS:  1
+JOIN KEYS: run_id
+FEATURES: methodology_version
+OUTCOMES: none detected
+
+COLUMNS:
+  - run_id: TEXT | PRIMARY KEY
+  - methodology_version: TEXT | NOT NULL
+  - mode: TEXT | NOT NULL
+  - started_at: TEXT | NOT NULL
+  - completed_at: TEXT
+  - source_decisions: INTEGER | NOT NULL, DEFAULT 0
+  - diagnostics_analyzed: INTEGER | NOT NULL, DEFAULT 0
+  - diagnostics_saved: INTEGER | NOT NULL, DEFAULT 0
+  - history_saved: INTEGER | NOT NULL, DEFAULT 0
+  - buy_ready_count: INTEGER | NOT NULL, DEFAULT 0
+  - near_buy_count: INTEGER | NOT NULL, DEFAULT 0
+  - watch_ready_count: INTEGER | NOT NULL, DEFAULT 0
+  - near_watch_count: INTEGER | NOT NULL, DEFAULT 0
+  - distant_count: INTEGER | NOT NULL, DEFAULT 0
+  - veto_blocked_count: INTEGER | NOT NULL, DEFAULT 0
+  - duration_seconds: REAL
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+INDEXES:
+  - sqlite_autoindex_institutional_decision_diagnostic_runs_1 (unique=True)
+
+SAMPLE ROWS:
+  {"methodology_version": "1.0", "run_id": "ec739af0fa38485893e5a8e33c461ef3"}
+
+CREATE SQL:
+CREATE TABLE institutional_decision_diagnostic_runs (
+            run_id TEXT PRIMARY KEY,
+            methodology_version TEXT NOT NULL,
+            mode TEXT NOT NULL,
+
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+
+            source_decisions INTEGER NOT NULL DEFAULT 0,
+            diagnostics_analyzed INTEGER NOT NULL DEFAULT 0,
+            diagnostics_saved INTEGER NOT NULL DEFAULT 0,
+            history_saved INTEGER NOT NULL DEFAULT 0,
+
+            buy_ready_count INTEGER NOT NULL DEFAULT 0,
+            near_buy_count INTEGER NOT NULL DEFAULT 0,
+            watch_ready_count INTEGER NOT NULL DEFAULT 0,
+            near_watch_count INTEGER NOT NULL DEFAULT 0,
+            distant_count INTEGER NOT NULL DEFAULT 0,
+            veto_blocked_count INTEGER NOT NULL DEFAULT 0,
+
+            duration_seconds REAL,
+            status TEXT NOT NULL,
+            error_message TEXT
+        )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_diagnostics
+ROWS:  131
+JOIN KEYS: opportunity_key, market_id, outcome, run_id
+FEATURES: decision_score, decision_grade, actionability_score, confidence, trust_quality_score, entry_quality_score, market_structure_score, data_quality_score, wallet_count, elite_wallet_count
+OUTCOMES: none detected
+
+COLUMNS:
+  - opportunity_key: TEXT | PRIMARY KEY
+  - market_id: TEXT
+  - title: TEXT | NOT NULL
+  - outcome: TEXT
+  - current_action: TEXT | NOT NULL
+  - decision_grade: TEXT
+  - decision_score: REAL | NOT NULL, DEFAULT 0
+  - actionability_score: REAL | NOT NULL, DEFAULT 0
+  - confidence: REAL | NOT NULL, DEFAULT 0
+  - entry_quality_score: REAL | NOT NULL, DEFAULT 0
+  - market_structure_score: REAL | NOT NULL, DEFAULT 0
+  - trust_quality_score: REAL | NOT NULL, DEFAULT 0
+  - data_quality_score: REAL | NOT NULL, DEFAULT 0
+  - wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - elite_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - supporting_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - trusted_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - hard_veto: INTEGER | NOT NULL, DEFAULT 0
+  - buy_requirements_passed: INTEGER | NOT NULL, DEFAULT 0
+  - buy_requirements_failed: INTEGER | NOT NULL, DEFAULT 0
+  - watch_requirements_passed: INTEGER | NOT NULL, DEFAULT 0
+  - watch_requirements_failed: INTEGER | NOT NULL, DEFAULT 0
+  - buy_gap_score: REAL | NOT NULL, DEFAULT 0
+  - watch_gap_score: REAL | NOT NULL, DEFAULT 0
+  - nearest_upgrade: TEXT | NOT NULL
+  - upgrade_difficulty: TEXT | NOT NULL
+  - primary_blocker: TEXT | NOT NULL
+  - secondary_blocker: TEXT
+  - blocker_category: TEXT | NOT NULL
+  - failed_buy_requirements_json: TEXT | NOT NULL
+  - failed_watch_requirements_json: TEXT | NOT NULL
+  - veto_reasons_json: TEXT | NOT NULL
+  - positive_reasons_json: TEXT | NOT NULL
+  - risk_flags_json: TEXT | NOT NULL
+  - upgrade_actions_json: TEXT | NOT NULL
+  - diagnostic_summary: TEXT | NOT NULL
+  - source_calculated_at: TEXT
+  - diagnosed_at: TEXT | NOT NULL
+  - run_id: TEXT | NOT NULL
+
+INDEXES:
+  - idx_decision_diagnostics_upgrade (unique=False)
+  - sqlite_autoindex_institutional_decision_diagnostics_1 (unique=True)
+
+SAMPLE ROWS:
+  {"actionability_score": 72.7317, "confidence": 69.7165, "data_quality_score": 83.1946, "decision_grade": "B+", "decision_score": 67.6847, "elite_wallet_count": 1, "entry_quality_score": 70.254, "market_id": "0xcc2bd1a1bdcdc5c0791c5140f7fbfa15daa9e7fd1ae2666c87a4be91f3d533f5", "market_structure_score": 84.0, "opportunity_key": "0xcc2bd1a1bdcdc5c0791c5140f7fbfa15daa9e7fd1ae2666c87a4be91f3d533f5:yes", "outcome": "Yes", "run_id": "ec739af0fa38485893e5a8e33c461ef3", "trust_quality_score": 43.7758, "wallet_count": 1}
+  {"actionability_score": 77.0128, "confidence": 81.0402, "data_quality_score": 94.4446, "decision_grade": "B+", "decision_score": 66.655, "elite_wallet_count": 1, "entry_quality_score": 71.6891, "market_id": "0x56d4ad6146b2554fe2c6800df1352391cec841039006d42b3614a591a13afe99", "market_structure_score": 89.6103, "opportunity_key": "0x56d4ad6146b2554fe2c6800df1352391cec841039006d42b3614a591a13afe99:yes", "outcome": "Yes", "run_id": "ec739af0fa38485893e5a8e33c461ef3", "trust_quality_score": 40.1186, "wallet_count": 1}
+  {"actionability_score": 76.6885, "confidence": 81.0402, "data_quality_score": 94.4446, "decision_grade": "B+", "decision_score": 66.6148, "elite_wallet_count": 1, "entry_quality_score": 70.6472, "market_id": "0xa1ce91a96da0580d6f694d11d6abd6a615a451fd53be6dba898c1d25fcce645a", "market_structure_score": 89.2649, "opportunity_key": "0xa1ce91a96da0580d6f694d11d6abd6a615a451fd53be6dba898c1d25fcce645a:yes", "outcome": "Yes", "run_id": "ec739af0fa38485893e5a8e33c461ef3", "trust_quality_score": 40.1186, "wallet_count": 1}
+
+CREATE SQL:
+CREATE TABLE institutional_decision_diagnostics (
+            opportunity_key TEXT PRIMARY KEY,
+            market_id TEXT,
+            title TEXT NOT NULL,
+            outcome TEXT,
+
+            current_action TEXT NOT NULL,
+            decision_grade TEXT,
+
+            decision_score REAL NOT NULL DEFAULT 0,
+            actionability_score REAL NOT NULL DEFAULT 0,
+            confidence REAL NOT NULL DEFAULT 0,
+
+            entry_quality_score REAL NOT NULL DEFAULT 0,
+            market_structure_score REAL NOT NULL DEFAULT 0,
+            trust_quality_score REAL NOT NULL DEFAULT 0,
+            data_quality_score REAL NOT NULL DEFAULT 0,
+
+            wallet_count INTEGER NOT NULL DEFAULT 0,
+            elite_wallet_count INTEGER NOT NULL DEFAULT 0,
+            supporting_wallet_count INTEGER NOT NULL DEFAULT 0,
+            trusted_wallet_count INTEGER NOT NULL DEFAULT 0,
+
+            hard_veto INTEGER NOT NULL DEFAULT 0,
+
+            buy_requirements_passed INTEGER NOT NULL DEFAULT 0,
+            buy_requirements_failed INTEGER NOT NULL DEFAULT 0,
+
+            watch_requirements_passed INTEGER NOT NULL DEFAULT 0,
+            watch_requirements_failed INTEGER NOT NULL DEFAULT 0,
+
+            buy_gap_score REAL NOT NULL DEFAULT 0,
+            watch_gap_score REAL NOT NULL DEFAULT 0,
+
+            nearest_upgrade TEXT NOT NULL,
+            upgrade_difficulty TEXT NOT NULL,
+
+            primary_blocker TEXT NOT NULL,
+            secondary_blocker TEXT,
+            blocker_category TEXT NOT NULL,
+
+            failed_buy_requirements_json TEXT NOT NULL,
+            failed_watch_requirements_json TEXT NOT NULL,
+
+            veto_reasons_json TEXT NOT NULL,
+            positive_reasons_json TEXT NOT NULL,
+            risk_flags_json TEXT NOT NULL,
+            upgrade_actions_json TEXT NOT NULL,
+
+            diagnostic_summary TEXT NOT NULL,
+
+            source_calculated_at TEXT,
+            diagnosed_at TEXT NOT NULL,
+            run_id TEXT NOT NULL
+        )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_history
+ROWS:  131
+JOIN KEYS: opportunity_key, market_id, outcome, run_id
+FEATURES: decision_score, decision_grade, decision_action, actionability_score, confidence, entry_quality_score, market_structure_score, data_quality_score, methodology_version
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - run_id: TEXT | NOT NULL
+  - opportunity_key: TEXT | NOT NULL
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - decision_score: REAL | NOT NULL
+  - decision_grade: TEXT | NOT NULL
+  - decision_action: TEXT | NOT NULL
+  - actionability_score: REAL | NOT NULL
+  - confidence: REAL | NOT NULL
+  - weighted_trust_score: REAL | NOT NULL
+  - entry_quality_score: REAL | NOT NULL
+  - market_structure_score: REAL | NOT NULL
+  - data_quality_score: REAL | NOT NULL
+  - hard_veto: INTEGER | NOT NULL
+  - veto_reasons_json: TEXT
+  - risk_flags_json: TEXT
+  - observed_at: TEXT | NOT NULL
+  - methodology_version: TEXT | NOT NULL
+
+INDEXES:
+  - idx_institutional_decision_history (unique=False)
+
+SAMPLE ROWS:
+  {"actionability_score": 65.278, "confidence": 70.6359, "data_quality_score": 60.6161, "decision_action": "WAIT", "decision_grade": "B+", "decision_score": 63.5393, "entry_quality_score": 49.2444, "market_id": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892", "market_structure_score": 91.4423, "methodology_version": "1.0", "opportunity_key": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892:yes", "outcome": "Yes", "run_id": "860dad817e3a4ff3b1d91f89d86d6b5f"}
+  {"actionability_score": 60.1163, "confidence": 52.824, "data_quality_score": 53.8161, "decision_action": "WAIT", "decision_grade": "B+", "decision_score": 65.6913, "entry_quality_score": 47.45, "market_id": "0xcdf6b4a05ea78163d81e55f3c73e1cfe2b7b054745704dadb6fe150419dd6360", "market_structure_score": 84.0, "methodology_version": "1.0", "opportunity_key": "0xcdf6b4a05ea78163d81e55f3c73e1cfe2b7b054745704dadb6fe150419dd6360:no", "outcome": "No", "run_id": "860dad817e3a4ff3b1d91f89d86d6b5f"}
+  {"actionability_score": 59.212, "confidence": 52.824, "data_quality_score": 53.8161, "decision_action": "WAIT", "decision_grade": "B+", "decision_score": 64.4019, "entry_quality_score": 45.38, "market_id": "0x87e30a1325dc8aae40963e3ec5669c98632e042a1a46acdb17e66f5d62aa8095", "market_structure_score": 84.0, "methodology_version": "1.0", "opportunity_key": "0x87e30a1325dc8aae40963e3ec5669c98632e042a1a46acdb17e66f5d62aa8095:no", "outcome": "No", "run_id": "860dad817e3a4ff3b1d91f89d86d6b5f"}
+
+CREATE SQL:
+CREATE TABLE institutional_decision_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+
+                opportunity_key TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+
+                decision_score REAL NOT NULL,
+                decision_grade TEXT NOT NULL,
+                decision_action TEXT NOT NULL,
+                actionability_score REAL NOT NULL,
+
+                confidence REAL NOT NULL,
+                weighted_trust_score REAL NOT NULL,
+                entry_quality_score REAL NOT NULL,
+                market_structure_score REAL NOT NULL,
+                data_quality_score REAL NOT NULL,
+
+                hard_veto INTEGER NOT NULL,
+                veto_reasons_json TEXT,
+                risk_flags_json TEXT,
+
+                observed_at TEXT NOT NULL,
+                methodology_version TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_history_v2
+ROWS:  0
+JOIN KEYS: opportunity_key, market_id, outcome, run_id
+FEATURES: decision_score, decision_grade, decision_action, actionability_score, confidence, entry_quality_score, market_structure_score, data_quality_score, methodology_version
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - run_id: TEXT | NOT NULL
+  - opportunity_key: TEXT | NOT NULL
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - decision_score: REAL | NOT NULL
+  - decision_grade: TEXT | NOT NULL
+  - decision_action: TEXT | NOT NULL
+  - actionability_score: REAL | NOT NULL
+  - confidence: REAL | NOT NULL
+  - weighted_trust_score: REAL | NOT NULL
+  - entry_quality_score: REAL | NOT NULL
+  - market_structure_score: REAL | NOT NULL
+  - data_quality_score: REAL | NOT NULL
+  - hard_veto: INTEGER | NOT NULL
+  - veto_reasons_json: TEXT
+  - risk_flags_json: TEXT
+  - observed_at: TEXT | NOT NULL
+  - methodology_version: TEXT | NOT NULL
+
+CREATE SQL:
+CREATE TABLE institutional_decision_history_v2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+
+                opportunity_key TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+
+                decision_score REAL NOT NULL,
+                decision_grade TEXT NOT NULL,
+                decision_action TEXT NOT NULL,
+                actionability_score REAL NOT NULL,
+
+                confidence REAL NOT NULL,
+                weighted_trust_score REAL NOT NULL,
+                entry_quality_score REAL NOT NULL,
+                market_structure_score REAL NOT NULL,
+                data_quality_score REAL NOT NULL,
+
+                hard_veto INTEGER NOT NULL,
+                veto_reasons_json TEXT,
+                risk_flags_json TEXT,
+
+                observed_at TEXT NOT NULL,
+                methodology_version TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_runs
+ROWS:  4
+JOIN KEYS: run_id
+FEATURES: methodology_version
+OUTCOMES: none detected
+
+COLUMNS:
+  - run_id: TEXT | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - mode: TEXT | NOT NULL
+  - methodology_version: TEXT | NOT NULL
+  - opportunity_limit: INTEGER | NOT NULL
+  - minimum_master_score: REAL | NOT NULL
+  - minimum_data_completeness: REAL | NOT NULL
+  - source_rows_seen: INTEGER | NOT NULL, DEFAULT 0
+  - decisions_analyzed: INTEGER | NOT NULL, DEFAULT 0
+  - decisions_saved: INTEGER | NOT NULL, DEFAULT 0
+  - history_saved: INTEGER | NOT NULL, DEFAULT 0
+  - buy_count: INTEGER | NOT NULL, DEFAULT 0
+  - watch_count: INTEGER | NOT NULL, DEFAULT 0
+  - wait_count: INTEGER | NOT NULL, DEFAULT 0
+  - pass_count: INTEGER | NOT NULL, DEFAULT 0
+  - avoid_count: INTEGER | NOT NULL, DEFAULT 0
+  - veto_count: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - duration_seconds: REAL | NOT NULL, DEFAULT 0
+  - error_message: TEXT
+
+INDEXES:
+  - sqlite_autoindex_institutional_decision_runs_1 (unique=True)
+
+SAMPLE ROWS:
+  {"methodology_version": "1.0", "run_id": "6fc81bc2a7d74b0ea795dc4c4a8e3617"}
+  {"methodology_version": "1.0", "run_id": "03f6730d07b445eabfe41eb9f554c26a"}
+  {"methodology_version": "1.0", "run_id": "860dad817e3a4ff3b1d91f89d86d6b5f"}
+
+CREATE SQL:
+CREATE TABLE institutional_decision_runs (
+                run_id TEXT PRIMARY KEY,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+
+                mode TEXT NOT NULL,
+                methodology_version TEXT NOT NULL,
+
+                opportunity_limit INTEGER NOT NULL,
+                minimum_master_score REAL NOT NULL,
+                minimum_data_completeness REAL NOT NULL,
+
+                source_rows_seen INTEGER NOT NULL DEFAULT 0,
+                decisions_analyzed INTEGER NOT NULL DEFAULT 0,
+                decisions_saved INTEGER NOT NULL DEFAULT 0,
+                history_saved INTEGER NOT NULL DEFAULT 0,
+
+                buy_count INTEGER NOT NULL DEFAULT 0,
+                watch_count INTEGER NOT NULL DEFAULT 0,
+                wait_count INTEGER NOT NULL DEFAULT 0,
+                pass_count INTEGER NOT NULL DEFAULT 0,
+                avoid_count INTEGER NOT NULL DEFAULT 0,
+                veto_count INTEGER NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                duration_seconds REAL NOT NULL DEFAULT 0,
+                error_message TEXT
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decision_runs_v2
+ROWS:  7
+JOIN KEYS: run_id
+FEATURES: methodology_version
+OUTCOMES: none detected
+
+COLUMNS:
+  - run_id: TEXT | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - mode: TEXT | NOT NULL
+  - methodology_version: TEXT | NOT NULL
+  - opportunity_limit: INTEGER | NOT NULL
+  - minimum_master_score: REAL | NOT NULL
+  - minimum_data_completeness: REAL | NOT NULL
+  - source_rows_seen: INTEGER | NOT NULL, DEFAULT 0
+  - decisions_analyzed: INTEGER | NOT NULL, DEFAULT 0
+  - decisions_saved: INTEGER | NOT NULL, DEFAULT 0
+  - history_saved: INTEGER | NOT NULL, DEFAULT 0
+  - buy_count: INTEGER | NOT NULL, DEFAULT 0
+  - watch_count: INTEGER | NOT NULL, DEFAULT 0
+  - wait_count: INTEGER | NOT NULL, DEFAULT 0
+  - pass_count: INTEGER | NOT NULL, DEFAULT 0
+  - avoid_count: INTEGER | NOT NULL, DEFAULT 0
+  - veto_count: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - duration_seconds: REAL | NOT NULL, DEFAULT 0
+  - error_message: TEXT
+
+INDEXES:
+  - sqlite_autoindex_institutional_decision_runs_v2_1 (unique=True)
+
+SAMPLE ROWS:
+  {"methodology_version": "2.0", "run_id": "2bc67ff13aaf4631be6df46037330017"}
+  {"methodology_version": "2.0", "run_id": "816b2b5dd81747a29a526fe211185881"}
+  {"methodology_version": "2.0", "run_id": "9c93acf90f7c45eebdcfa5d8d63f9644"}
+
+CREATE SQL:
+CREATE TABLE institutional_decision_runs_v2 (
+                run_id TEXT PRIMARY KEY,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+
+                mode TEXT NOT NULL,
+                methodology_version TEXT NOT NULL,
+
+                opportunity_limit INTEGER NOT NULL,
+                minimum_master_score REAL NOT NULL,
+                minimum_data_completeness REAL NOT NULL,
+
+                source_rows_seen INTEGER NOT NULL DEFAULT 0,
+                decisions_analyzed INTEGER NOT NULL DEFAULT 0,
+                decisions_saved INTEGER NOT NULL DEFAULT 0,
+                history_saved INTEGER NOT NULL DEFAULT 0,
+
+                buy_count INTEGER NOT NULL DEFAULT 0,
+                watch_count INTEGER NOT NULL DEFAULT 0,
+                wait_count INTEGER NOT NULL DEFAULT 0,
+                pass_count INTEGER NOT NULL DEFAULT 0,
+                avoid_count INTEGER NOT NULL DEFAULT 0,
+                veto_count INTEGER NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                duration_seconds REAL NOT NULL DEFAULT 0,
+                error_message TEXT
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decisions
+ROWS:  131
+JOIN KEYS: opportunity_key, market_id, outcome
+FEATURES: decision_score, decision_grade, decision_action, actionability_score, confidence, confidence_grade, master_quality_score, consensus_quality_score, wallet_quality_score, trust_quality_score, entry_quality_score, market_structure_score, evolution_quality_score, timing_quality_score, data_quality_score, wallet_count, elite_wallet_count, chase_risk_score, conflict_ratio, reversal_score, weakening_score, edge_remaining_score, methodology_version, calculated_at
+OUTCOMES: none detected
+
+COLUMNS:
+  - opportunity_key: TEXT | PRIMARY KEY
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - market_type: TEXT
+  - decision_score: REAL | NOT NULL, DEFAULT 0
+  - decision_grade: TEXT | NOT NULL, DEFAULT 'D'
+  - decision_action: TEXT | NOT NULL, DEFAULT 'PASS'
+  - actionability_score: REAL | NOT NULL, DEFAULT 0
+  - confidence: REAL | NOT NULL, DEFAULT 0
+  - confidence_grade: TEXT | NOT NULL, DEFAULT 'VERY LOW'
+  - master_quality_score: REAL | NOT NULL, DEFAULT 0
+  - consensus_quality_score: REAL | NOT NULL, DEFAULT 0
+  - wallet_quality_score: REAL | NOT NULL, DEFAULT 0
+  - trust_quality_score: REAL | NOT NULL, DEFAULT 50
+  - entry_quality_score: REAL | NOT NULL, DEFAULT 0
+  - market_structure_score: REAL | NOT NULL, DEFAULT 0
+  - evolution_quality_score: REAL | NOT NULL, DEFAULT 0
+  - timing_quality_score: REAL | NOT NULL, DEFAULT 0
+  - data_quality_score: REAL | NOT NULL, DEFAULT 0
+  - wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - elite_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - supporting_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - trusted_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - weighted_trust_score: REAL | NOT NULL, DEFAULT 50
+  - trust_confidence: REAL | NOT NULL, DEFAULT 0
+  - average_consensus_multiplier: REAL | NOT NULL, DEFAULT 1
+  - combined_current_value: REAL | NOT NULL, DEFAULT 0
+  - chase_risk_score: REAL | NOT NULL, DEFAULT 0
+  - conflict_ratio: REAL | NOT NULL, DEFAULT 0
+  - reversal_score: REAL | NOT NULL, DEFAULT 0
+  - weakening_score: REAL | NOT NULL, DEFAULT 0
+  - edge_remaining_score: REAL | NOT NULL, DEFAULT 0
+  - lifecycle_status: TEXT
+  - seconds_to_start: INTEGER
+  - data_completeness_score: REAL | NOT NULL, DEFAULT 0
+  - source_coverage_score: REAL | NOT NULL, DEFAULT 0
+  - data_confidence: TEXT | NOT NULL, DEFAULT 'LOW'
+  - canonical_match: INTEGER | NOT NULL, DEFAULT 0
+  - is_tradable: INTEGER | NOT NULL, DEFAULT 0
+  - polymarket_url: TEXT
+  - liquidity: REAL | NOT NULL, DEFAULT 0
+  - volume: REAL | NOT NULL, DEFAULT 0
+  - hard_veto: INTEGER | NOT NULL, DEFAULT 0
+  - veto_reasons_json: TEXT
+  - positive_reasons_json: TEXT
+  - risk_flags_json: TEXT
+  - explanation: TEXT | NOT NULL
+  - calculated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+  - methodology_version: TEXT | NOT NULL
+
+INDEXES:
+  - idx_institutional_decisions_rank (unique=False)
+  - sqlite_autoindex_institutional_decisions_1 (unique=True)
+
+SAMPLE ROWS:
+  {"actionability_score": 65.278, "confidence": 70.6359, "confidence_grade": "HIGH", "consensus_quality_score": 73.4626, "decision_action": "WAIT", "decision_grade": "B+", "decision_score": 63.5393, "entry_quality_score": 49.2444, "market_id": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892", "market_structure_score": 91.4423, "master_quality_score": 66.8, "opportunity_key": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892:yes", "outcome": "Yes", "trust_quality_score": 41.0042, "wallet_quality_score": 73.6474}
+  {"actionability_score": 60.1163, "confidence": 52.824, "confidence_grade": "MEDIUM", "consensus_quality_score": 79.0896, "decision_action": "WAIT", "decision_grade": "B+", "decision_score": 65.6913, "entry_quality_score": 47.45, "market_id": "0xcdf6b4a05ea78163d81e55f3c73e1cfe2b7b054745704dadb6fe150419dd6360", "market_structure_score": 84.0, "master_quality_score": 54.5, "opportunity_key": "0xcdf6b4a05ea78163d81e55f3c73e1cfe2b7b054745704dadb6fe150419dd6360:no", "outcome": "No", "trust_quality_score": 55.9488, "wallet_quality_score": 91.445}
+  {"actionability_score": 59.212, "confidence": 52.824, "confidence_grade": "MEDIUM", "consensus_quality_score": 79.2925, "decision_action": "WAIT", "decision_grade": "B+", "decision_score": 64.4019, "entry_quality_score": 45.38, "market_id": "0x87e30a1325dc8aae40963e3ec5669c98632e042a1a46acdb17e66f5d62aa8095", "market_structure_score": 84.0, "master_quality_score": 50.2, "opportunity_key": "0x87e30a1325dc8aae40963e3ec5669c98632e042a1a46acdb17e66f5d62aa8095:no", "outcome": "No", "trust_quality_score": 55.9488, "wallet_quality_score": 91.445}
+
+CREATE SQL:
+CREATE TABLE institutional_decisions (
+                opportunity_key TEXT PRIMARY KEY,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                market_type TEXT,
+
+                decision_score REAL NOT NULL DEFAULT 0,
+                decision_grade TEXT NOT NULL DEFAULT 'D',
+                decision_action TEXT NOT NULL DEFAULT 'PASS',
+                actionability_score REAL NOT NULL DEFAULT 0,
+
+                confidence REAL NOT NULL DEFAULT 0,
+                confidence_grade TEXT NOT NULL DEFAULT 'VERY LOW',
+
+                master_quality_score REAL NOT NULL DEFAULT 0,
+                consensus_quality_score REAL NOT NULL DEFAULT 0,
+                wallet_quality_score REAL NOT NULL DEFAULT 0,
+                trust_quality_score REAL NOT NULL DEFAULT 50,
+                entry_quality_score REAL NOT NULL DEFAULT 0,
+                market_structure_score REAL NOT NULL DEFAULT 0,
+                evolution_quality_score REAL NOT NULL DEFAULT 0,
+                timing_quality_score REAL NOT NULL DEFAULT 0,
+                data_quality_score REAL NOT NULL DEFAULT 0,
+
+                wallet_count INTEGER NOT NULL DEFAULT 0,
+                elite_wallet_count INTEGER NOT NULL DEFAULT 0,
+                supporting_wallet_count INTEGER NOT NULL DEFAULT 0,
+                trusted_wallet_count INTEGER NOT NULL DEFAULT 0,
+
+                weighted_trust_score REAL NOT NULL DEFAULT 50,
+                trust_confidence REAL NOT NULL DEFAULT 0,
+                average_consensus_multiplier REAL NOT NULL DEFAULT 1,
+
+                combined_current_value REAL NOT NULL DEFAULT 0,
+
+                chase_risk_score REAL NOT NULL DEFAULT 0,
+                conflict_ratio REAL NOT NULL DEFAULT 0,
+                reversal_score REAL NOT NULL DEFAULT 0,
+                weakening_score REAL NOT NULL DEFAULT 0,
+                edge_remaining_score REAL NOT NULL DEFAULT 0,
+
+                lifecycle_status TEXT,
+                seconds_to_start INTEGER,
+
+                data_completeness_score REAL NOT NULL DEFAULT 0,
+                source_coverage_score REAL NOT NULL DEFAULT 0,
+                data_confidence TEXT NOT NULL DEFAULT 'LOW',
+
+                canonical_match INTEGER NOT NULL DEFAULT 0,
+                is_tradable INTEGER NOT NULL DEFAULT 0,
+                polymarket_url TEXT,
+                liquidity REAL NOT NULL DEFAULT 0,
+                volume REAL NOT NULL DEFAULT 0,
+
+                hard_veto INTEGER NOT NULL DEFAULT 0,
+                veto_reasons_json TEXT,
+                positive_reasons_json TEXT,
+                risk_flags_json TEXT,
+                explanation TEXT NOT NULL,
+
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                methodology_version TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: institutional_decisions_v2
+ROWS:  0
+JOIN KEYS: opportunity_key, market_id, outcome
+FEATURES: decision_score, decision_grade, decision_action, actionability_score, confidence, confidence_grade, master_quality_score, consensus_quality_score, wallet_quality_score, trust_quality_score, entry_quality_score, market_structure_score, evolution_quality_score, timing_quality_score, data_quality_score, wallet_count, elite_wallet_count, chase_risk_score, conflict_ratio, reversal_score, weakening_score, edge_remaining_score, methodology_version, calculated_at
+OUTCOMES: none detected
+
+COLUMNS:
+  - opportunity_key: TEXT | PRIMARY KEY
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - market_type: TEXT
+  - decision_score: REAL | NOT NULL, DEFAULT 0
+  - decision_grade: TEXT | NOT NULL, DEFAULT 'D'
+  - decision_action: TEXT | NOT NULL, DEFAULT 'PASS'
+  - actionability_score: REAL | NOT NULL, DEFAULT 0
+  - confidence: REAL | NOT NULL, DEFAULT 0
+  - confidence_grade: TEXT | NOT NULL, DEFAULT 'VERY LOW'
+  - master_quality_score: REAL | NOT NULL, DEFAULT 0
+  - consensus_quality_score: REAL | NOT NULL, DEFAULT 0
+  - wallet_quality_score: REAL | NOT NULL, DEFAULT 0
+  - trust_quality_score: REAL | NOT NULL, DEFAULT 50
+  - entry_quality_score: REAL | NOT NULL, DEFAULT 0
+  - market_structure_score: REAL | NOT NULL, DEFAULT 0
+  - evolution_quality_score: REAL | NOT NULL, DEFAULT 0
+  - timing_quality_score: REAL | NOT NULL, DEFAULT 0
+  - data_quality_score: REAL | NOT NULL, DEFAULT 0
+  - wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - elite_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - supporting_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - trusted_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - weighted_trust_score: REAL | NOT NULL, DEFAULT 50
+  - trust_confidence: REAL | NOT NULL, DEFAULT 0
+  - average_consensus_multiplier: REAL | NOT NULL, DEFAULT 1
+  - combined_current_value: REAL | NOT NULL, DEFAULT 0
+  - chase_risk_score: REAL | NOT NULL, DEFAULT 0
+  - conflict_ratio: REAL | NOT NULL, DEFAULT 0
+  - reversal_score: REAL | NOT NULL, DEFAULT 0
+  - weakening_score: REAL | NOT NULL, DEFAULT 0
+  - edge_remaining_score: REAL | NOT NULL, DEFAULT 0
+  - lifecycle_status: TEXT
+  - seconds_to_start: INTEGER
+  - data_completeness_score: REAL | NOT NULL, DEFAULT 0
+  - source_coverage_score: REAL | NOT NULL, DEFAULT 0
+  - data_confidence: TEXT | NOT NULL, DEFAULT 'LOW'
+  - canonical_match: INTEGER | NOT NULL, DEFAULT 0
+  - is_tradable: INTEGER | NOT NULL, DEFAULT 0
+  - polymarket_url: TEXT
+  - liquidity: REAL | NOT NULL, DEFAULT 0
+  - volume: REAL | NOT NULL, DEFAULT 0
+  - hard_veto: INTEGER | NOT NULL, DEFAULT 0
+  - veto_reasons_json: TEXT
+  - positive_reasons_json: TEXT
+  - risk_flags_json: TEXT
+  - explanation: TEXT | NOT NULL
+  - calculated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+  - methodology_version: TEXT | NOT NULL
+
+INDEXES:
+  - sqlite_autoindex_institutional_decisions_v2_1 (unique=True)
+
+CREATE SQL:
+CREATE TABLE institutional_decisions_v2 (
+                opportunity_key TEXT PRIMARY KEY,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                market_type TEXT,
+
+                decision_score REAL NOT NULL DEFAULT 0,
+                decision_grade TEXT NOT NULL DEFAULT 'D',
+                decision_action TEXT NOT NULL DEFAULT 'PASS',
+                actionability_score REAL NOT NULL DEFAULT 0,
+
+                confidence REAL NOT NULL DEFAULT 0,
+                confidence_grade TEXT NOT NULL DEFAULT 'VERY LOW',
+
+                master_quality_score REAL NOT NULL DEFAULT 0,
+                consensus_quality_score REAL NOT NULL DEFAULT 0,
+                wallet_quality_score REAL NOT NULL DEFAULT 0,
+                trust_quality_score REAL NOT NULL DEFAULT 50,
+                entry_quality_score REAL NOT NULL DEFAULT 0,
+                market_structure_score REAL NOT NULL DEFAULT 0,
+                evolution_quality_score REAL NOT NULL DEFAULT 0,
+                timing_quality_score REAL NOT NULL DEFAULT 0,
+                data_quality_score REAL NOT NULL DEFAULT 0,
+
+                wallet_count INTEGER NOT NULL DEFAULT 0,
+                elite_wallet_count INTEGER NOT NULL DEFAULT 0,
+                supporting_wallet_count INTEGER NOT NULL DEFAULT 0,
+                trusted_wallet_count INTEGER NOT NULL DEFAULT 0,
+
+                weighted_trust_score REAL NOT NULL DEFAULT 50,
+                trust_confidence REAL NOT NULL DEFAULT 0,
+                average_consensus_multiplier REAL NOT NULL DEFAULT 1,
+
+                combined_current_value REAL NOT NULL DEFAULT 0,
+
+                chase_risk_score REAL NOT NULL DEFAULT 0,
+                conflict_ratio REAL NOT NULL DEFAULT 0,
+                reversal_score REAL NOT NULL DEFAULT 0,
+                weakening_score REAL NOT NULL DEFAULT 0,
+                edge_remaining_score REAL NOT NULL DEFAULT 0,
+
+                lifecycle_status TEXT,
+                seconds_to_start INTEGER,
+
+                data_completeness_score REAL NOT NULL DEFAULT 0,
+                source_coverage_score REAL NOT NULL DEFAULT 0,
+                data_confidence TEXT NOT NULL DEFAULT 'LOW',
+
+                canonical_match INTEGER NOT NULL DEFAULT 0,
+                is_tradable INTEGER NOT NULL DEFAULT 0,
+                polymarket_url TEXT,
+                liquidity REAL NOT NULL DEFAULT 0,
+                volume REAL NOT NULL DEFAULT 0,
+
+                hard_veto INTEGER NOT NULL DEFAULT 0,
+                veto_reasons_json TEXT,
+                positive_reasons_json TEXT,
+                risk_flags_json TEXT,
+                explanation TEXT NOT NULL,
+
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                methodology_version TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: mapped_market_results
+ROWS:  116
+JOIN KEYS: condition_id, winning_outcome_name
+FEATURES: calculated_at
+OUTCOMES: resolution_status, winning_outcome_name, settlement_price, resolved_at_detected
+
+COLUMNS:
+  - mapped_result_key: TEXT | PRIMARY KEY
+  - mapping_key: TEXT | NOT NULL
+  - source_table: TEXT | NOT NULL
+  - source_market_id: TEXT | NOT NULL
+  - source_title: TEXT
+  - source_outcome: TEXT
+  - gamma_market_id: TEXT | NOT NULL
+  - condition_id: TEXT
+  - resolution_status: TEXT | NOT NULL, DEFAULT 'UNRESOLVED'
+  - winning_outcome_name: TEXT
+  - winning_token_id: TEXT
+  - source_outcome_normalized: TEXT
+  - winning_outcome_normalized: TEXT
+  - source_outcome_won: INTEGER
+  - source_outcome_lost: INTEGER
+  - settlement_price: REAL
+  - match_method: TEXT
+  - match_confidence: REAL
+  - resolved_at_detected: TEXT
+  - calculated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_mapped_market_results_mapping (unique=False)
+  - idx_mapped_market_results_resolution (unique=False)
+  - sqlite_autoindex_mapped_market_results_1 (unique=True)
+
+SAMPLE ROWS:
+  {"calculated_at": "2026-07-16T14:27:54.500701+00:00", "condition_id": "0x9b6fef249040fd17e9c107955b37ac2c3e923509b6b0ff01cc463a331ddeb894", "resolution_status": "LIKELY_RESOLVED", "resolved_at_detected": "2026-07-16T14:27:53.898173+00:00", "settlement_price": 1.0, "winning_outcome_name": "No"}
+  {"calculated_at": "2026-07-16T14:27:54.500701+00:00", "condition_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "resolution_status": "LIKELY_RESOLVED", "resolved_at_detected": "2026-07-16T14:27:53.898173+00:00", "settlement_price": 1.0, "winning_outcome_name": "No"}
+  {"calculated_at": "2026-07-16T14:27:54.500701+00:00", "condition_id": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892", "resolution_status": "UNRESOLVED", "resolved_at_detected": "", "settlement_price": null, "winning_outcome_name": ""}
+
+CREATE SQL:
+CREATE TABLE mapped_market_results (
+                mapped_result_key TEXT PRIMARY KEY,
+
+                mapping_key TEXT NOT NULL,
+
+                source_table TEXT NOT NULL,
+                source_market_id TEXT NOT NULL,
+                source_title TEXT,
+                source_outcome TEXT,
+
+                gamma_market_id TEXT NOT NULL,
+                condition_id TEXT,
+
+                resolution_status TEXT
+                    NOT NULL DEFAULT 'UNRESOLVED',
+
+                winning_outcome_name TEXT,
+                winning_token_id TEXT,
+
+                source_outcome_normalized TEXT,
+                winning_outcome_normalized TEXT,
+
+                source_outcome_won INTEGER,
+                source_outcome_lost INTEGER,
+
+                settlement_price REAL,
+
+                match_method TEXT,
+                match_confidence REAL,
+
+                resolved_at_detected TEXT,
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_opportunity_history
+ROWS:  5
+JOIN KEYS: opportunity_key, condition_id, winning_outcome
+FEATURES: wallet_count
+OUTCOMES: resolved, winning_outcome
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - opportunity_key: TEXT | NOT NULL
+  - condition_id: TEXT | NOT NULL
+  - rank_number: INTEGER
+  - opportunity_score: REAL
+  - opportunity_grade: TEXT
+  - recommendation: TEXT
+  - is_actionable: INTEGER
+  - research_probability: REAL
+  - prediction_confidence: REAL
+  - current_net_flow: REAL
+  - wallet_count: INTEGER
+  - polymarket_url: TEXT
+  - t_minus_target_at: TEXT
+  - t_minus_seconds: INTEGER
+  - t_minus_display: TEXT
+  - time_status: TEXT
+  - resolved: INTEGER | NOT NULL, DEFAULT 0
+  - winning_outcome: TEXT
+  - observed_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_market_opportunity_history_condition (unique=False)
+
+SAMPLE ROWS:
+  {"condition_id": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f", "opportunity_key": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f:24:2026-07-16T20:30:52.478525+00:00", "resolved": 0, "wallet_count": 2, "winning_outcome": ""}
+  {"condition_id": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f", "opportunity_key": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f:24:2026-07-16T20:37:01.588024+00:00", "resolved": 0, "wallet_count": 2, "winning_outcome": ""}
+  {"condition_id": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f", "opportunity_key": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f:24:2026-07-17T08:31:28.340597+00:00", "resolved": 0, "wallet_count": 2, "winning_outcome": ""}
+
+CREATE SQL:
+CREATE TABLE market_opportunity_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                opportunity_key TEXT NOT NULL,
+                condition_id TEXT NOT NULL,
+
+                rank_number INTEGER,
+                opportunity_score REAL,
+                opportunity_grade TEXT,
+                recommendation TEXT,
+                is_actionable INTEGER,
+
+                research_probability REAL,
+                prediction_confidence REAL,
+                current_net_flow REAL,
+                wallet_count INTEGER,
+
+                polymarket_url TEXT,
+                t_minus_target_at TEXT,
+                t_minus_seconds INTEGER,
+                t_minus_display TEXT,
+                time_status TEXT,
+
+                resolved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                winning_outcome TEXT,
+
+                observed_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_opportunity_runs
+ROWS:  4
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - elapsed_seconds: REAL
+  - lookback_hours: INTEGER | NOT NULL
+  - predictions_loaded: INTEGER | NOT NULL, DEFAULT 0
+  - exact_mappings: INTEGER | NOT NULL, DEFAULT 0
+  - links_created: INTEGER | NOT NULL, DEFAULT 0
+  - opportunities_saved: INTEGER | NOT NULL, DEFAULT 0
+  - actionable_opportunities: INTEGER | NOT NULL, DEFAULT 0
+  - open_opportunities: INTEGER | NOT NULL, DEFAULT 0
+  - live_opportunities: INTEGER | NOT NULL, DEFAULT 0
+  - closed_opportunities: INTEGER | NOT NULL, DEFAULT 0
+  - missing_link_count: INTEGER | NOT NULL, DEFAULT 0
+  - unknown_time_count: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+CREATE SQL:
+CREATE TABLE market_opportunity_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                elapsed_seconds REAL,
+
+                lookback_hours INTEGER NOT NULL,
+
+                predictions_loaded INTEGER
+                    NOT NULL DEFAULT 0,
+
+                exact_mappings INTEGER
+                    NOT NULL DEFAULT 0,
+
+                links_created INTEGER
+                    NOT NULL DEFAULT 0,
+
+                opportunities_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                actionable_opportunities INTEGER
+                    NOT NULL DEFAULT 0,
+
+                open_opportunities INTEGER
+                    NOT NULL DEFAULT 0,
+
+                live_opportunities INTEGER
+                    NOT NULL DEFAULT 0,
+
+                closed_opportunities INTEGER
+                    NOT NULL DEFAULT 0,
+
+                missing_link_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                unknown_time_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                error_message TEXT
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_prediction_history
+ROWS:  38
+JOIN KEYS: condition_id, winning_outcome
+FEATURES: confidence_grade
+OUTCOMES: resolved, winning_outcome
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - prediction_key: TEXT | NOT NULL
+  - condition_id: TEXT | NOT NULL
+  - predicted_direction: TEXT
+  - research_probability: REAL
+  - probability_edge: REAL
+  - confidence_score: REAL
+  - confidence_grade: TEXT
+  - prediction_grade: TEXT
+  - recommended_action: TEXT
+  - smart_money_flow_score: REAL
+  - market_memory_score: REAL
+  - resolved: INTEGER
+  - winning_outcome: TEXT
+  - observed_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_market_prediction_history_condition (unique=False)
+
+SAMPLE ROWS:
+  {"condition_id": "0x4e803589e3aac8b331a3c930a96ae0f1dffffa43e47776f4d48dd8fa2ef46206", "confidence_grade": "MEDIUM", "resolved": 0, "winning_outcome": ""}
+  {"condition_id": "0x46c426c7bbe988fdc3ded2d3466c29a1351648212a1c07d442642cb5a1e41636", "confidence_grade": "MEDIUM", "resolved": 0, "winning_outcome": ""}
+  {"condition_id": "0xc1bf3ab30348820b5912c0a4d389b0a379382c17a6043dfbd66c94f08e79dc77", "confidence_grade": "MEDIUM", "resolved": 0, "winning_outcome": ""}
+
+CREATE SQL:
+CREATE TABLE market_prediction_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                prediction_key TEXT NOT NULL,
+                condition_id TEXT NOT NULL,
+
+                predicted_direction TEXT,
+                research_probability REAL,
+                probability_edge REAL,
+                confidence_score REAL,
+                confidence_grade TEXT,
+                prediction_grade TEXT,
+                recommended_action TEXT,
+
+                smart_money_flow_score REAL,
+                market_memory_score REAL,
+
+                resolved INTEGER,
+                winning_outcome TEXT,
+
+                observed_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_prediction_runs
+ROWS:  1
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - elapsed_seconds: REAL
+  - lookback_hours: INTEGER | NOT NULL
+  - flow_signals_loaded: INTEGER | NOT NULL, DEFAULT 0
+  - predictions_saved: INTEGER | NOT NULL, DEFAULT 0
+  - actionable_predictions: INTEGER | NOT NULL, DEFAULT 0
+  - bullish_predictions: INTEGER | NOT NULL, DEFAULT 0
+  - bearish_predictions: INTEGER | NOT NULL, DEFAULT 0
+  - neutral_predictions: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+CREATE SQL:
+CREATE TABLE market_prediction_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                elapsed_seconds REAL,
+
+                lookback_hours INTEGER NOT NULL,
+
+                flow_signals_loaded INTEGER
+                    NOT NULL DEFAULT 0,
+
+                predictions_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                actionable_predictions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                bullish_predictions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                bearish_predictions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                neutral_predictions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                error_message TEXT
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_predictions
+ROWS:  38
+JOIN KEYS: market_id, condition_id, winning_outcome
+FEATURES: confidence_grade, elite_wallet_count, category
+OUTCOMES: resolved, winning_outcome
+
+COLUMNS:
+  - prediction_key: TEXT | PRIMARY KEY
+  - condition_id: TEXT | NOT NULL
+  - market_id: TEXT
+  - event_id: TEXT
+  - title: TEXT
+  - slug: TEXT
+  - event_slug: TEXT
+  - category: TEXT
+  - lookback_hours: INTEGER | NOT NULL
+  - source_signal_key: TEXT
+  - source_snapshot_key: TEXT
+  - predicted_direction: TEXT | NOT NULL, DEFAULT 'NEUTRAL'
+  - research_probability: REAL | NOT NULL, DEFAULT 50
+  - probability_edge: REAL | NOT NULL, DEFAULT 0
+  - confidence_score: REAL | NOT NULL, DEFAULT 0
+  - confidence_grade: TEXT | NOT NULL, DEFAULT 'LOW'
+  - prediction_grade: TEXT | NOT NULL, DEFAULT 'PASS'
+  - recommended_action: TEXT | NOT NULL, DEFAULT 'PASS'
+  - smart_money_flow_score: REAL | NOT NULL, DEFAULT 0
+  - market_memory_score: REAL | NOT NULL, DEFAULT 0
+  - accumulation_score: REAL | NOT NULL, DEFAULT 0
+  - distribution_score: REAL | NOT NULL, DEFAULT 0
+  - consensus_strength: REAL | NOT NULL, DEFAULT 0
+  - trusted_flow_score: REAL | NOT NULL, DEFAULT 0
+  - persistence_score: REAL | NOT NULL, DEFAULT 0
+  - breadth_score: REAL | NOT NULL, DEFAULT 0
+  - velocity_score: REAL | NOT NULL, DEFAULT 0
+  - acceleration_score: REAL | NOT NULL, DEFAULT 0
+  - rotation_score: REAL | NOT NULL, DEFAULT 0
+  - concentration_risk: REAL | NOT NULL, DEFAULT 0
+  - whale_concentration: REAL | NOT NULL, DEFAULT 0
+  - current_net_flow: REAL | NOT NULL, DEFAULT 0
+  - current_gross_flow: REAL | NOT NULL, DEFAULT 0
+  - current_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - elite_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - qualified_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - watchlist_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - current_price: REAL
+  - average_trade_price: REAL
+  - data_completeness_score: REAL | NOT NULL, DEFAULT 0
+  - model_disagreement_score: REAL | NOT NULL, DEFAULT 0
+  - is_actionable: INTEGER | NOT NULL, DEFAULT 0
+  - resolved: INTEGER | NOT NULL, DEFAULT 0
+  - winning_outcome: TEXT
+  - positive_evidence_json: TEXT
+  - risk_flags_json: TEXT
+  - component_scores_json: TEXT
+  - metadata_json: TEXT
+  - predicted_at: TEXT | NOT NULL
+  - created_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_market_predictions_condition (unique=False)
+  - idx_market_predictions_rank (unique=False)
+  - sqlite_autoindex_market_predictions_1 (unique=True)
+
+SAMPLE ROWS:
+  {"category": "", "condition_id": "0x4e803589e3aac8b331a3c930a96ae0f1dffffa43e47776f4d48dd8fa2ef46206", "confidence_grade": "MEDIUM", "elite_wallet_count": 0, "market_id": "", "resolved": 0, "winning_outcome": ""}
+  {"category": "", "condition_id": "0x46c426c7bbe988fdc3ded2d3466c29a1351648212a1c07d442642cb5a1e41636", "confidence_grade": "MEDIUM", "elite_wallet_count": 0, "market_id": "", "resolved": 0, "winning_outcome": ""}
+  {"category": "", "condition_id": "0xc1bf3ab30348820b5912c0a4d389b0a379382c17a6043dfbd66c94f08e79dc77", "confidence_grade": "MEDIUM", "elite_wallet_count": 0, "market_id": "", "resolved": 0, "winning_outcome": ""}
+
+CREATE SQL:
+CREATE TABLE market_predictions (
+                prediction_key TEXT PRIMARY KEY,
+
+                condition_id TEXT NOT NULL,
+                market_id TEXT,
+                event_id TEXT,
+
+                title TEXT,
+                slug TEXT,
+                event_slug TEXT,
+                category TEXT,
+
+                lookback_hours INTEGER NOT NULL,
+
+                source_signal_key TEXT,
+                source_snapshot_key TEXT,
+
+                predicted_direction TEXT
+                    NOT NULL DEFAULT 'NEUTRAL',
+
+                research_probability REAL
+                    NOT NULL DEFAULT 50,
+
+                probability_edge REAL
+                    NOT NULL DEFAULT 0,
+
+                confidence_score REAL
+                    NOT NULL DEFAULT 0,
+
+                confidence_grade TEXT
+                    NOT NULL DEFAULT 'LOW',
+
+                prediction_grade TEXT
+                    NOT NULL DEFAULT 'PASS',
+
+                recommended_action TEXT
+                    NOT NULL DEFAULT 'PASS',
+
+                smart_money_flow_score REAL
+                    NOT NULL DEFAULT 0,
+
+                market_memory_score REAL
+                    NOT NULL DEFAULT 0,
+
+                accumulation_score REAL
+                    NOT NULL DEFAULT 0,
+
+                distribution_score REAL
+                    NOT NULL DEFAULT 0,
+
+                consensus_strength REAL
+                    NOT NULL DEFAULT 0,
+
+                trusted_flow_score REAL
+                    NOT NULL DEFAULT 0,
+
+                persistence_score REAL
+                    NOT NULL DEFAULT 0,
+
+                breadth_score REAL
+                    NOT NULL DEFAULT 0,
+
+                velocity_score REAL
+                    NOT NULL DEFAULT 0,
+
+                acceleration_score REAL
+                    NOT NULL DEFAULT 0,
+
+                rotation_score REAL
+                    NOT NULL DEFAULT 0,
+
+                concentration_risk REAL
+                    NOT NULL DEFAULT 0,
+
+                whale_concentration REAL
+                    NOT NULL DEFAULT 0,
+
+                current_net_flow REAL
+                    NOT NULL DEFAULT 0,
+
+                current_gross_flow REAL
+                    NOT NULL DEFAULT 0,
+
+                current_wallet_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                elite_wallet_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                qualified_wallet_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                watchlist_wallet_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                current_price REAL,
+                average_trade_price REAL,
+
+                data_completeness_score REAL
+                    NOT NULL DEFAULT 0,
+
+                model_disagreement_score REAL
+                    NOT NULL DEFAULT 0,
+
+                is_actionable INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                winning_outcome TEXT,
+
+                positive_evidence_json TEXT,
+                risk_flags_json TEXT,
+                component_scores_json TEXT,
+                metadata_json TEXT,
+
+                predicted_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_resolution_outcomes
+ROWS:  41,206
+JOIN KEYS: condition_id, token_id, outcome_name, resolution_key
+FEATURES: none detected
+OUTCOMES: resolution_status, winner, settlement_price
+
+COLUMNS:
+  - resolution_outcome_key: TEXT | PRIMARY KEY
+  - resolution_key: TEXT | NOT NULL
+  - gamma_market_id: TEXT | NOT NULL
+  - condition_id: TEXT
+  - outcome_index: INTEGER | NOT NULL
+  - outcome_name: TEXT | NOT NULL
+  - token_id: TEXT
+  - implied_price: REAL
+  - winner: INTEGER | NOT NULL, DEFAULT 0
+  - settlement_price: REAL
+  - resolution_status: TEXT | NOT NULL, DEFAULT 'UNRESOLVED'
+  - first_seen_at: TEXT | NOT NULL
+  - last_checked_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+
+FOREIGN KEYS:
+  - resolution_key -> market_resolutions.resolution_key (delete=CASCADE, update=NO ACTION)
+
+INDEXES:
+  - idx_market_resolution_outcomes_token (unique=False)
+  - idx_market_resolution_outcomes_market (unique=False)
+  - sqlite_autoindex_market_resolution_outcomes_1 (unique=True)
+
+SAMPLE ROWS:
+  {"condition_id": "0x5b70123b2c37355840b38bc60752919dae7ca5fe11d5e5184aa69be01b9db458", "outcome_name": "Yes", "resolution_key": "gamma:516950", "resolution_status": "LOSER", "settlement_price": 0.0, "token_id": "106229668102716149832209250222340847662201251266419359322746795373714233470739", "winner": 0}
+  {"condition_id": "0x5b70123b2c37355840b38bc60752919dae7ca5fe11d5e5184aa69be01b9db458", "outcome_name": "No", "resolution_key": "gamma:516950", "resolution_status": "LOSER", "settlement_price": 0.0, "token_id": "33007765079325382103458898680383691503895532108499178620460955049586020382226", "winner": 0}
+  {"condition_id": "0x9b3c3177fe473124c756b01e123b4b03e3a99880844ed8dea21b0a7879ca04aa", "outcome_name": "Yes", "resolution_key": "gamma:678876", "resolution_status": "LOSER", "settlement_price": 0.0, "token_id": "33799186820745984796925628555218896548353763534512103584425851114581900224385", "winner": 0}
+
+CREATE SQL:
+CREATE TABLE market_resolution_outcomes (
+                resolution_outcome_key TEXT PRIMARY KEY,
+
+                resolution_key TEXT NOT NULL,
+
+                gamma_market_id TEXT NOT NULL,
+                condition_id TEXT,
+
+                outcome_index INTEGER
+                    NOT NULL,
+
+                outcome_name TEXT NOT NULL,
+                token_id TEXT,
+
+                implied_price REAL,
+
+                winner INTEGER
+                    NOT NULL DEFAULT 0,
+
+                settlement_price REAL,
+
+                resolution_status TEXT
+                    NOT NULL DEFAULT 'UNRESOLVED',
+
+                first_seen_at TEXT NOT NULL,
+                last_checked_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+
+                FOREIGN KEY(
+                    resolution_key
+                )
+                REFERENCES market_resolutions(
+                    resolution_key
+                )
+                ON DELETE CASCADE
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_resolution_runs
+ROWS:  1
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - elapsed_seconds: REAL
+  - registry_markets_checked: INTEGER | NOT NULL, DEFAULT 0
+  - resolved_markets_found: INTEGER | NOT NULL, DEFAULT 0
+  - ambiguous_markets: INTEGER | NOT NULL, DEFAULT 0
+  - unresolved_markets: INTEGER | NOT NULL, DEFAULT 0
+  - resolution_rows_saved: INTEGER | NOT NULL, DEFAULT 0
+  - outcome_rows_saved: INTEGER | NOT NULL, DEFAULT 0
+  - mapped_results_saved: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+CREATE SQL:
+CREATE TABLE market_resolution_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                elapsed_seconds REAL,
+
+                registry_markets_checked INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolved_markets_found INTEGER
+                    NOT NULL DEFAULT 0,
+
+                ambiguous_markets INTEGER
+                    NOT NULL DEFAULT 0,
+
+                unresolved_markets INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolution_rows_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                outcome_rows_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                mapped_results_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                error_message TEXT
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: market_resolutions
+ROWS:  20,603
+JOIN KEYS: condition_id, winning_outcome_name, resolution_key
+FEATURES: none detected
+OUTCOMES: resolved, resolution_status, winning_outcome_name, settlement_price, resolved_at_detected
+
+COLUMNS:
+  - resolution_key: TEXT | PRIMARY KEY
+  - gamma_market_id: TEXT | NOT NULL
+  - gamma_event_id: TEXT
+  - condition_id: TEXT
+  - question: TEXT | NOT NULL
+  - slug: TEXT
+  - resolved: INTEGER | NOT NULL, DEFAULT 0
+  - resolution_status: TEXT | NOT NULL, DEFAULT 'UNRESOLVED'
+  - winning_outcome_index: INTEGER
+  - winning_outcome_name: TEXT
+  - winning_token_id: TEXT
+  - settlement_price: REAL
+  - outcome_count: INTEGER | NOT NULL, DEFAULT 0
+  - resolved_outcome_count: INTEGER | NOT NULL, DEFAULT 0
+  - closed: INTEGER | NOT NULL, DEFAULT 0
+  - active: INTEGER | NOT NULL, DEFAULT 0
+  - end_time: TEXT
+  - updated_at_gamma: TEXT
+  - resolution_source: TEXT
+  - resolved_by: TEXT
+  - confidence_score: REAL | NOT NULL, DEFAULT 0
+  - source_payload_json: TEXT
+  - explanation_json: TEXT
+  - first_seen_at: TEXT | NOT NULL
+  - last_checked_at: TEXT | NOT NULL
+  - resolved_at_detected: TEXT
+  - updated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_market_resolutions_condition (unique=False)
+  - idx_market_resolutions_status (unique=False)
+  - sqlite_autoindex_market_resolutions_1 (unique=True)
+
+SAMPLE ROWS:
+  {"condition_id": "0x5b70123b2c37355840b38bc60752919dae7ca5fe11d5e5184aa69be01b9db458", "resolution_key": "gamma:516950", "resolution_status": "LIKELY_RESOLVED", "resolved": 1, "resolved_at_detected": "2026-07-16T14:27:53.898173+00:00", "settlement_price": 1.0, "winning_outcome_name": "No"}
+  {"condition_id": "0x9b3c3177fe473124c756b01e123b4b03e3a99880844ed8dea21b0a7879ca04aa", "resolution_key": "gamma:678876", "resolution_status": "LIKELY_RESOLVED", "resolved": 1, "resolved_at_detected": "2026-07-16T14:27:53.898173+00:00", "settlement_price": 1.0, "winning_outcome_name": "No"}
+  {"condition_id": "0xced0cb8725bad43d78fda0cd0e5fa9e31804625cb3502b2c7897f8e8f7fa9e1f", "resolution_key": "gamma:691547", "resolution_status": "UNRESOLVED", "resolved": 0, "resolved_at_detected": "", "settlement_price": null, "winning_outcome_name": ""}
+
+CREATE SQL:
+CREATE TABLE market_resolutions (
+                resolution_key TEXT PRIMARY KEY,
+
+                gamma_market_id TEXT NOT NULL,
+                gamma_event_id TEXT,
+                condition_id TEXT,
+
+                question TEXT NOT NULL,
+                slug TEXT,
+
+                resolved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolution_status TEXT
+                    NOT NULL DEFAULT 'UNRESOLVED',
+
+                winning_outcome_index INTEGER,
+                winning_outcome_name TEXT,
+                winning_token_id TEXT,
+
+                settlement_price REAL,
+
+                outcome_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolved_outcome_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                closed INTEGER
+                    NOT NULL DEFAULT 0,
+
+                active INTEGER
+                    NOT NULL DEFAULT 0,
+
+                end_time TEXT,
+                updated_at_gamma TEXT,
+
+                resolution_source TEXT,
+                resolved_by TEXT,
+
+                confidence_score REAL
+                    NOT NULL DEFAULT 0,
+
+                source_payload_json TEXT,
+                explanation_json TEXT,
+
+                first_seen_at TEXT NOT NULL,
+                last_checked_at TEXT NOT NULL,
+                resolved_at_detected TEXT,
+                updated_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: master_opportunity_history
+ROWS:  131
+JOIN KEYS: opportunity_key, market_id, outcome
+FEATURES: wallet_quality_score, wallet_count, elite_wallet_count, chase_risk_score, conflict_ratio, reversal_score, weakening_score, edge_remaining_score
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - opportunity_key: TEXT | NOT NULL
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - master_score: REAL
+  - master_grade: TEXT
+  - master_tier: TEXT
+  - recommendation: TEXT
+  - lifecycle_status: TEXT
+  - seconds_to_start: INTEGER
+  - opportunity_score: REAL
+  - institutional_score: REAL
+  - evolution_score: REAL
+  - closing_line_score: REAL
+  - price_action_score: REAL
+  - wallet_quality_score: REAL
+  - timing_score: REAL
+  - wallet_count: INTEGER
+  - elite_wallet_count: INTEGER
+  - effective_wallet_count: REAL
+  - combined_current_value: REAL
+  - consensus_strength: REAL
+  - strengthening_score: REAL
+  - weakening_score: REAL
+  - net_value_change: REAL
+  - clv_score: REAL
+  - edge_remaining_score: REAL
+  - chase_risk_score: REAL
+  - steam_score: REAL
+  - reversal_score: REAL
+  - volatility_score: REAL
+  - conflict_ratio: REAL
+  - portfolio_independence_score: REAL
+  - remaining_upside: REAL
+  - data_completeness_score: REAL
+  - data_confidence: TEXT
+  - source_coverage_score: REAL
+  - source_count: INTEGER
+  - total_penalty: REAL
+  - observed_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_master_history_key_time (unique=False)
+
+SAMPLE ROWS:
+  {"chase_risk_score": null, "conflict_ratio": 0.0, "edge_remaining_score": null, "elite_wallet_count": 3, "market_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "opportunity_key": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f:yes", "outcome": "Yes", "reversal_score": null, "wallet_count": 5, "wallet_quality_score": 84.6476266832401, "weakening_score": 0.0}
+  {"chase_risk_score": null, "conflict_ratio": 0.0, "edge_remaining_score": null, "elite_wallet_count": 4, "market_id": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892", "opportunity_key": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892:yes", "outcome": "Yes", "reversal_score": null, "wallet_count": 10, "wallet_quality_score": 73.64867781184324, "weakening_score": 5.25980809637454}
+  {"chase_risk_score": 40.147092257490364, "conflict_ratio": 0.0, "edge_remaining_score": 78.20979666519709, "elite_wallet_count": 1, "market_id": "0xa1ce91a96da0580d6f694d11d6abd6a615a451fd53be6dba898c1d25fcce645a", "opportunity_key": "0xa1ce91a96da0580d6f694d11d6abd6a615a451fd53be6dba898c1d25fcce645a:yes", "outcome": "Yes", "reversal_score": 0.0, "wallet_count": 1, "wallet_quality_score": 87.33, "weakening_score": 0.0}
+
+CREATE SQL:
+CREATE TABLE master_opportunity_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                opportunity_key TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+
+                master_score REAL,
+                master_grade TEXT,
+                master_tier TEXT,
+                recommendation TEXT,
+
+                lifecycle_status TEXT,
+                seconds_to_start INTEGER,
+
+                opportunity_score REAL,
+                institutional_score REAL,
+                evolution_score REAL,
+                closing_line_score REAL,
+                price_action_score REAL,
+                wallet_quality_score REAL,
+                timing_score REAL,
+
+                wallet_count INTEGER,
+                elite_wallet_count INTEGER,
+                effective_wallet_count REAL,
+
+                combined_current_value REAL,
+                consensus_strength REAL,
+                strengthening_score REAL,
+                weakening_score REAL,
+                net_value_change REAL,
+
+                clv_score REAL,
+                edge_remaining_score REAL,
+                chase_risk_score REAL,
+
+                steam_score REAL,
+                reversal_score REAL,
+                volatility_score REAL,
+
+                conflict_ratio REAL,
+                portfolio_independence_score REAL,
+                remaining_upside REAL,
+
+                data_completeness_score REAL,
+                data_confidence TEXT,
+                source_coverage_score REAL,
+                source_count INTEGER,
+
+                total_penalty REAL,
+
+                observed_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: master_opportunity_runs
+ROWS:  1
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - elapsed_seconds: REAL
+  - source_rows_seen: INTEGER | NOT NULL, DEFAULT 0
+  - master_rows_saved: INTEGER | NOT NULL, DEFAULT 0
+  - history_rows_created: INTEGER | NOT NULL, DEFAULT 0
+  - alerts_created: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+CREATE SQL:
+CREATE TABLE master_opportunity_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                elapsed_seconds REAL,
+
+                source_rows_seen INTEGER
+                    NOT NULL DEFAULT 0,
+
+                master_rows_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                history_rows_created INTEGER
+                    NOT NULL DEFAULT 0,
+
+                alerts_created INTEGER
+                    NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                error_message TEXT
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: opportunity_score_history
+ROWS:  501
+JOIN KEYS: opportunity_key, market_id, outcome
+FEATURES: wallet_count, elite_wallet_count, conflict_ratio, calculated_at
+OUTCOMES: is_resolved
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - opportunity_key: TEXT | NOT NULL
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - opportunity_score: REAL | NOT NULL
+  - opportunity_tier: TEXT | NOT NULL
+  - opportunity_grade: TEXT | NOT NULL
+  - recommended_action: TEXT | NOT NULL
+  - wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - average_wallet_quality: REAL | NOT NULL, DEFAULT 0
+  - combined_current_value: REAL | NOT NULL, DEFAULT 0
+  - combined_open_pnl: REAL | NOT NULL, DEFAULT 0
+  - open_pnl_ratio: REAL | NOT NULL, DEFAULT 0
+  - average_entry_price: REAL | NOT NULL, DEFAULT 0
+  - average_current_price: REAL | NOT NULL, DEFAULT 0
+  - observed_price_move: REAL | NOT NULL, DEFAULT 0
+  - average_wallet_concentration: REAL | NOT NULL, DEFAULT 0
+  - conviction_score: REAL | NOT NULL, DEFAULT 0
+  - consensus_component: REAL | NOT NULL, DEFAULT 0
+  - wallet_quality_component: REAL | NOT NULL, DEFAULT 0
+  - capital_component: REAL | NOT NULL, DEFAULT 0
+  - profitability_component: REAL | NOT NULL, DEFAULT 0
+  - momentum_component: REAL | NOT NULL, DEFAULT 0
+  - timing_component: REAL | NOT NULL, DEFAULT 0
+  - freshness_component: REAL | NOT NULL, DEFAULT 0
+  - concentration_penalty: REAL | NOT NULL, DEFAULT 0
+  - lifecycle_status: TEXT
+  - game_start_time: TEXT
+  - seconds_to_start: INTEGER
+  - signal_observed_at: TEXT
+  - explanation_json: TEXT
+  - calculated_at: TEXT | NOT NULL
+  - is_pregame: INTEGER | NOT NULL, DEFAULT 0
+  - is_live: INTEGER | NOT NULL, DEFAULT 0
+  - is_ended: INTEGER | NOT NULL, DEFAULT 0
+  - is_closed: INTEGER | NOT NULL, DEFAULT 0
+  - is_resolved: INTEGER | NOT NULL, DEFAULT 0
+  - score: TEXT
+  - period: TEXT
+  - elapsed: TEXT
+  - metadata_updated_at: TEXT
+  - updated_at: TEXT
+  - market_type: TEXT
+  - weighted_wallet_quality: REAL | DEFAULT 0
+  - average_dna_score: REAL | DEFAULT 0
+  - weighted_dna_score: REAL | DEFAULT 0
+  - average_leader_score: REAL | DEFAULT 0
+  - weighted_leader_score: REAL | DEFAULT 0
+  - average_activity_score: REAL | DEFAULT 0
+  - profitable_wallet_rate: REAL | DEFAULT 0
+  - elite_wallet_count: INTEGER | DEFAULT 0
+  - elite_wallet_value: REAL | DEFAULT 0
+  - elite_wallet_value_share: REAL | DEFAULT 0
+  - largest_wallet_share: REAL | DEFAULT 0
+  - top_three_wallet_share: REAL | DEFAULT 0
+  - effective_wallet_count: REAL | DEFAULT 0
+  - average_pair_overlap: REAL | DEFAULT 0
+  - portfolio_independence_score: REAL | DEFAULT 0
+  - overlap_pair_coverage: REAL | DEFAULT 0
+  - opposing_wallet_count: INTEGER | DEFAULT 0
+  - opposing_value: REAL | DEFAULT 0
+  - market_total_value: REAL | DEFAULT 0
+  - market_value_share: REAL | DEFAULT 0
+  - conflict_ratio: REAL | DEFAULT 0
+  - backtest_sample_size: INTEGER | DEFAULT 0
+  - backtest_win_rate: REAL | DEFAULT 0
+  - backtest_average_return: REAL | DEFAULT 0
+  - backtest_component: REAL | DEFAULT 50
+  - data_completeness_score: REAL | DEFAULT 0
+  - data_confidence: TEXT | DEFAULT 'LOW'
+  - overlap_penalty: REAL | DEFAULT 0
+  - conflict_penalty: REAL | DEFAULT 0
+  - extreme_price_penalty: REAL | DEFAULT 0
+  - low_upside_penalty: REAL | DEFAULT 0
+  - chase_penalty: REAL | DEFAULT 0
+  - stale_penalty: REAL | DEFAULT 0
+  - total_penalty: REAL | DEFAULT 0
+  - remaining_upside: REAL | DEFAULT 0
+  - is_market_leader: INTEGER | DEFAULT 0
+  - wallets_json: TEXT
+
+INDEXES:
+  - idx_opportunity_history_rank (unique=False)
+  - idx_opportunity_history_key (unique=False)
+
+SAMPLE ROWS:
+  {"calculated_at": "2026-07-15T09:59:36.221078+00:00", "conflict_ratio": 0.0, "elite_wallet_count": 0, "is_resolved": 0, "market_id": "0xecba7b1db1c698ab73b3572abfcde327a02b5112676144e049edcc1e1e0f5b0b", "opportunity_key": "0xecba7b1db1c698ab73b3572abfcde327a02b5112676144e049edcc1e1e0f5b0b:spain", "outcome": "Spain", "wallet_count": 8}
+  {"calculated_at": "2026-07-15T09:59:36.221078+00:00", "conflict_ratio": 0.0, "elite_wallet_count": 0, "is_resolved": 0, "market_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "opportunity_key": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f:yes", "outcome": "Yes", "wallet_count": 5}
+  {"calculated_at": "2026-07-15T09:59:36.221078+00:00", "conflict_ratio": 0.0, "elite_wallet_count": 0, "is_resolved": 0, "market_id": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892", "opportunity_key": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892:yes", "outcome": "Yes", "wallet_count": 10}
+
+CREATE SQL:
+CREATE TABLE opportunity_score_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                opportunity_key TEXT NOT NULL,
+
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+
+                opportunity_score REAL NOT NULL,
+                opportunity_tier TEXT NOT NULL,
+                opportunity_grade TEXT NOT NULL,
+                recommended_action TEXT NOT NULL,
+
+                wallet_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                average_wallet_quality REAL
+                    NOT NULL DEFAULT 0,
+
+                combined_current_value REAL
+                    NOT NULL DEFAULT 0,
+
+                combined_open_pnl REAL
+                    NOT NULL DEFAULT 0,
+
+                open_pnl_ratio REAL
+                    NOT NULL DEFAULT 0,
+
+                average_entry_price REAL
+                    NOT NULL DEFAULT 0,
+
+                average_current_price REAL
+                    NOT NULL DEFAULT 0,
+
+                observed_price_move REAL
+                    NOT NULL DEFAULT 0,
+
+                average_wallet_concentration REAL
+                    NOT NULL DEFAULT 0,
+
+                conviction_score REAL
+                    NOT NULL DEFAULT 0,
+
+                consensus_component REAL
+                    NOT NULL DEFAULT 0,
+
+                wallet_quality_component REAL
+                    NOT NULL DEFAULT 0,
+
+                capital_component REAL
+                    NOT NULL DEFAULT 0,
+
+                profitability_component REAL
+                    NOT NULL DEFAULT 0,
+
+                momentum_component REAL
+                    NOT NULL DEFAULT 0,
+
+                timing_component REAL
+                    NOT NULL DEFAULT 0,
+
+                freshness_component REAL
+                    NOT NULL DEFAULT 0,
+
+                concentration_penalty REAL
+                    NOT NULL DEFAULT 0,
+
+                lifecycle_status TEXT,
+                game_start_time TEXT,
+                seconds_to_start INTEGER,
+
+                signal_observed_at TEXT,
+                explanation_json TEXT,
+
+                calculated_at TEXT NOT NULL
+            , "is_pregame" INTEGER NOT NULL DEFAULT 0, "is_live" INTEGER NOT NULL DEFAULT 0, "is_ended" INTEGER NOT NULL DEFAULT 0, "is_closed" INTEGER NOT NULL DEFAULT 0, "is_resolved" INTEGER NOT NULL DEFAULT 0, "score" TEXT, "period" TEXT, "elapsed" TEXT, "metadata_updated_at" TEXT, "updated_at" TEXT, "market_type" TEXT, "weighted_wallet_quality" REAL DEFAULT 0, "average_dna_score" REAL DEFAULT 0, "weighted_dna_score" REAL DEFAULT 0, "average_leader_score" REAL DEFAULT 0, "weighted_leader_score" REAL DEFAULT 0, "average_activity_score" REAL DEFAULT 0, "profitable_wallet_rate" REAL DEFAULT 0, "elite_wallet_count" INTEGER DEFAULT 0, "elite_wallet_value" REAL DEFAULT 0, "elite_wallet_value_share" REAL DEFAULT 0, "largest_wallet_share" REAL DEFAULT 0, "top_three_wallet_share" REAL DEFAULT 0, "effective_wallet_count" REAL DEFAULT 0, "average_pair_overlap" REAL DEFAULT 0, "portfolio_independence_score" REAL DEFAULT 0, "overlap_pair_coverage" REAL DEFAULT 0, "opposing_wallet_count" INTEGER DEFAULT 0, "opposing_value" REAL DEFAULT 0, "market_total_value" REAL DEFAULT 0, "market_value_share" REAL DEFAULT 0, "conflict_ratio" REAL DEFAULT 0, "backtest_sample_size" INTEGER DEFAULT 0, "backtest_win_rate" REAL DEFAULT 0, "backtest_average_return" REAL DEFAULT 0, "backtest_component" REAL DEFAULT 50, "data_completeness_score" REAL DEFAULT 0, "data_confidence" TEXT DEFAULT 'LOW', "overlap_penalty" REAL DEFAULT 0, "conflict_penalty" REAL DEFAULT 0, "extreme_price_penalty" REAL DEFAULT 0, "low_upside_penalty" REAL DEFAULT 0, "chase_penalty" REAL DEFAULT 0, "stale_penalty" REAL DEFAULT 0, "total_penalty" REAL DEFAULT 0, "remaining_upside" REAL DEFAULT 0, "is_market_leader" INTEGER DEFAULT 0, "wallets_json" TEXT)
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: opportunity_scores
+ROWS:  131
+JOIN KEYS: opportunity_key, market_id, outcome
+FEATURES: wallet_count, elite_wallet_count, conflict_ratio, calculated_at
+OUTCOMES: is_resolved
+
+COLUMNS:
+  - opportunity_key: TEXT | PRIMARY KEY
+  - market_id: TEXT | NOT NULL
+  - title: TEXT | NOT NULL
+  - outcome: TEXT | NOT NULL
+  - opportunity_score: REAL | NOT NULL
+  - opportunity_tier: TEXT | NOT NULL
+  - opportunity_grade: TEXT | NOT NULL
+  - recommended_action: TEXT | NOT NULL
+  - wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - average_wallet_quality: REAL | NOT NULL, DEFAULT 0
+  - combined_current_value: REAL | NOT NULL, DEFAULT 0
+  - combined_open_pnl: REAL | NOT NULL, DEFAULT 0
+  - open_pnl_ratio: REAL | NOT NULL, DEFAULT 0
+  - average_entry_price: REAL | NOT NULL, DEFAULT 0
+  - average_current_price: REAL | NOT NULL, DEFAULT 0
+  - observed_price_move: REAL | NOT NULL, DEFAULT 0
+  - average_wallet_concentration: REAL | NOT NULL, DEFAULT 0
+  - conviction_score: REAL | NOT NULL, DEFAULT 0
+  - consensus_component: REAL | NOT NULL, DEFAULT 0
+  - wallet_quality_component: REAL | NOT NULL, DEFAULT 0
+  - capital_component: REAL | NOT NULL, DEFAULT 0
+  - profitability_component: REAL | NOT NULL, DEFAULT 0
+  - momentum_component: REAL | NOT NULL, DEFAULT 0
+  - timing_component: REAL | NOT NULL, DEFAULT 0
+  - freshness_component: REAL | NOT NULL, DEFAULT 0
+  - concentration_penalty: REAL | NOT NULL, DEFAULT 0
+  - lifecycle_status: TEXT
+  - game_start_time: TEXT
+  - seconds_to_start: INTEGER
+  - is_pregame: INTEGER | NOT NULL, DEFAULT 0
+  - is_live: INTEGER | NOT NULL, DEFAULT 0
+  - is_ended: INTEGER | NOT NULL, DEFAULT 0
+  - is_closed: INTEGER | NOT NULL, DEFAULT 0
+  - is_resolved: INTEGER | NOT NULL, DEFAULT 0
+  - score: TEXT
+  - period: TEXT
+  - elapsed: TEXT
+  - signal_observed_at: TEXT
+  - metadata_updated_at: TEXT
+  - explanation_json: TEXT
+  - calculated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+  - market_type: TEXT
+  - weighted_wallet_quality: REAL | NOT NULL, DEFAULT 0
+  - average_dna_score: REAL | NOT NULL, DEFAULT 0
+  - weighted_dna_score: REAL | NOT NULL, DEFAULT 0
+  - average_leader_score: REAL | NOT NULL, DEFAULT 0
+  - weighted_leader_score: REAL | NOT NULL, DEFAULT 0
+  - average_activity_score: REAL | NOT NULL, DEFAULT 0
+  - profitable_wallet_rate: REAL | NOT NULL, DEFAULT 0
+  - elite_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - elite_wallet_value: REAL | NOT NULL, DEFAULT 0
+  - elite_wallet_value_share: REAL | NOT NULL, DEFAULT 0
+  - largest_wallet_share: REAL | NOT NULL, DEFAULT 0
+  - top_three_wallet_share: REAL | NOT NULL, DEFAULT 0
+  - effective_wallet_count: REAL | NOT NULL, DEFAULT 0
+  - average_pair_overlap: REAL | NOT NULL, DEFAULT 0
+  - portfolio_independence_score: REAL | NOT NULL, DEFAULT 0
+  - overlap_pair_coverage: REAL | NOT NULL, DEFAULT 0
+  - opposing_wallet_count: INTEGER | NOT NULL, DEFAULT 0
+  - opposing_value: REAL | NOT NULL, DEFAULT 0
+  - market_total_value: REAL | NOT NULL, DEFAULT 0
+  - market_value_share: REAL | NOT NULL, DEFAULT 0
+  - conflict_ratio: REAL | NOT NULL, DEFAULT 0
+  - backtest_sample_size: INTEGER | NOT NULL, DEFAULT 0
+  - backtest_win_rate: REAL | NOT NULL, DEFAULT 0
+  - backtest_average_return: REAL | NOT NULL, DEFAULT 0
+  - backtest_component: REAL | NOT NULL, DEFAULT 50
+  - data_completeness_score: REAL | NOT NULL, DEFAULT 0
+  - data_confidence: TEXT | NOT NULL, DEFAULT 'LOW'
+  - overlap_penalty: REAL | NOT NULL, DEFAULT 0
+  - conflict_penalty: REAL | NOT NULL, DEFAULT 0
+  - extreme_price_penalty: REAL | NOT NULL, DEFAULT 0
+  - low_upside_penalty: REAL | NOT NULL, DEFAULT 0
+  - chase_penalty: REAL | NOT NULL, DEFAULT 0
+  - stale_penalty: REAL | NOT NULL, DEFAULT 0
+  - total_penalty: REAL | NOT NULL, DEFAULT 0
+  - remaining_upside: REAL | NOT NULL, DEFAULT 0
+  - is_market_leader: INTEGER | NOT NULL, DEFAULT 0
+  - wallets_json: TEXT
+
+INDEXES:
+  - idx_opportunity_scores_status (unique=False)
+  - idx_opportunity_scores_market (unique=False)
+  - idx_opportunity_scores_rank (unique=False)
+  - sqlite_autoindex_opportunity_scores_1 (unique=True)
+
+SAMPLE ROWS:
+  {"calculated_at": "2026-07-15T19:07:45.256988+00:00", "conflict_ratio": 0.0, "elite_wallet_count": 3, "is_resolved": 0, "market_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "opportunity_key": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f:yes", "outcome": "Yes", "wallet_count": 5}
+  {"calculated_at": "2026-07-15T19:07:45.256988+00:00", "conflict_ratio": 0.0, "elite_wallet_count": 4, "is_resolved": 0, "market_id": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892", "opportunity_key": "0x7976b8dbacf9077eb1453a62bcefd6ab2df199acd28aad276ff0d920d6992892:yes", "outcome": "Yes", "wallet_count": 10}
+  {"calculated_at": "2026-07-15T19:07:45.256988+00:00", "conflict_ratio": 0.11962432490307118, "elite_wallet_count": 0, "is_resolved": 0, "market_id": "0xfb2314dcad9273745bd3de0db31a2036cda3eae847039a58e41a3c2dcc233657", "opportunity_key": "0xfb2314dcad9273745bd3de0db31a2036cda3eae847039a58e41a3c2dcc233657:over", "outcome": "Over", "wallet_count": 1}
+
+CREATE SQL:
+CREATE TABLE opportunity_scores (
+                opportunity_key TEXT PRIMARY KEY,
+
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+
+                opportunity_score REAL NOT NULL,
+                opportunity_tier TEXT NOT NULL,
+                opportunity_grade TEXT NOT NULL,
+                recommended_action TEXT NOT NULL,
+
+                wallet_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                average_wallet_quality REAL
+                    NOT NULL DEFAULT 0,
+
+                combined_current_value REAL
+                    NOT NULL DEFAULT 0,
+
+                combined_open_pnl REAL
+                    NOT NULL DEFAULT 0,
+
+                open_pnl_ratio REAL
+                    NOT NULL DEFAULT 0,
+
+                average_entry_price REAL
+                    NOT NULL DEFAULT 0,
+
+                average_current_price REAL
+                    NOT NULL DEFAULT 0,
+
+                observed_price_move REAL
+                    NOT NULL DEFAULT 0,
+
+                average_wallet_concentration REAL
+                    NOT NULL DEFAULT 0,
+
+                conviction_score REAL
+                    NOT NULL DEFAULT 0,
+
+                consensus_component REAL
+                    NOT NULL DEFAULT 0,
+
+                wallet_quality_component REAL
+                    NOT NULL DEFAULT 0,
+
+                capital_component REAL
+                    NOT NULL DEFAULT 0,
+
+                profitability_component REAL
+                    NOT NULL DEFAULT 0,
+
+                momentum_component REAL
+                    NOT NULL DEFAULT 0,
+
+                timing_component REAL
+                    NOT NULL DEFAULT 0,
+
+                freshness_component REAL
+                    NOT NULL DEFAULT 0,
+
+                concentration_penalty REAL
+                    NOT NULL DEFAULT 0,
+
+                lifecycle_status TEXT,
+                game_start_time TEXT,
+                seconds_to_start INTEGER,
+
+                is_pregame INTEGER
+                    NOT NULL DEFAULT 0,
+
+                is_live INTEGER
+                    NOT NULL DEFAULT 0,
+
+                is_ended INTEGER
+                    NOT NULL DEFAULT 0,
+
+                is_closed INTEGER
+                    NOT NULL DEFAULT 0,
+
+                is_resolved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                score TEXT,
+                period TEXT,
+                elapsed TEXT,
+
+                signal_observed_at TEXT,
+                metadata_updated_at TEXT,
+
+                explanation_json TEXT,
+
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            , "market_type" TEXT, "weighted_wallet_quality" REAL NOT NULL DEFAULT 0, "average_dna_score" REAL NOT NULL DEFAULT 0, "weighted_dna_score" REAL NOT NULL DEFAULT 0, "average_leader_score" REAL NOT NULL DEFAULT 0, "weighted_leader_score" REAL NOT NULL DEFAULT 0, "average_activity_score" REAL NOT NULL DEFAULT 0, "profitable_wallet_rate" REAL NOT NULL DEFAULT 0, "elite_wallet_count" INTEGER NOT NULL DEFAULT 0, "elite_wallet_value" REAL NOT NULL DEFAULT 0, "elite_wallet_value_share" REAL NOT NULL DEFAULT 0, "largest_wallet_share" REAL NOT NULL DEFAULT 0, "top_three_wallet_share" REAL NOT NULL DEFAULT 0, "effective_wallet_count" REAL NOT NULL DEFAULT 0, "average_pair_overlap" REAL NOT NULL DEFAULT 0, "portfolio_independence_score" REAL NOT NULL DEFAULT 0, "overlap_pair_coverage" REAL NOT NULL DEFAULT 0, "opposing_wallet_count" INTEGER NOT NULL DEFAULT 0, "opposing_value" REAL NOT NULL DEFAULT 0, "market_total_value" REAL NOT NULL DEFAULT 0, "market_value_share" REAL NOT NULL DEFAULT 0, "conflict_ratio" REAL NOT NULL DEFAULT 0, "backtest_sample_size" INTEGER NOT NULL DEFAULT 0, "backtest_win_rate" REAL NOT NULL DEFAULT 0, "backtest_average_return" REAL NOT NULL DEFAULT 0, "backtest_component" REAL NOT NULL DEFAULT 50, "data_completeness_score" REAL NOT NULL DEFAULT 0, "data_confidence" TEXT NOT NULL DEFAULT 'LOW', "overlap_penalty" REAL NOT NULL DEFAULT 0, "conflict_penalty" REAL NOT NULL DEFAULT 0, "extreme_price_penalty" REAL NOT NULL DEFAULT 0, "low_upside_penalty" REAL NOT NULL DEFAULT 0, "chase_penalty" REAL NOT NULL DEFAULT 0, "stale_penalty" REAL NOT NULL DEFAULT 0, "total_penalty" REAL NOT NULL DEFAULT 0, "remaining_upside" REAL NOT NULL DEFAULT 0, "is_market_leader" INTEGER NOT NULL DEFAULT 0, "wallets_json" TEXT)
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: performance_analytics_runs
+ROWS:  2
+JOIN KEYS: run_id
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - run_id: TEXT | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - mode: TEXT | NOT NULL
+  - wallet_limit: INTEGER | NOT NULL
+  - min_elite_score: REAL | NOT NULL
+  - min_closed_sample: INTEGER | NOT NULL
+  - wallets_selected: INTEGER | NOT NULL, DEFAULT 0
+  - wallets_analyzed: INTEGER | NOT NULL, DEFAULT 0
+  - wallets_failed: INTEGER | NOT NULL, DEFAULT 0
+  - metrics_upserted: INTEGER | NOT NULL, DEFAULT 0
+  - summaries_upserted: INTEGER | NOT NULL, DEFAULT 0
+  - duration_seconds: REAL | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+INDEXES:
+  - sqlite_autoindex_performance_analytics_runs_1 (unique=True)
+
+SAMPLE ROWS:
+  {"run_id": "6908231c65654a0594f8e9f9a8374e96"}
+  {"run_id": "8ea372f874a74b59bfabee9a86dc4bfa"}
+
+CREATE SQL:
+CREATE TABLE "performance_analytics_runs" (
+                    run_id TEXT PRIMARY KEY,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    mode TEXT NOT NULL,
+                    wallet_limit INTEGER NOT NULL,
+                    min_elite_score REAL NOT NULL,
+                    min_closed_sample INTEGER NOT NULL,
+                    wallets_selected INTEGER NOT NULL DEFAULT 0,
+                    wallets_analyzed INTEGER NOT NULL DEFAULT 0,
+                    wallets_failed INTEGER NOT NULL DEFAULT 0,
+                    metrics_upserted INTEGER NOT NULL DEFAULT 0,
+                    summaries_upserted INTEGER NOT NULL DEFAULT 0,
+                    duration_seconds REAL NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL,
+                    error_message TEXT
+                )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: wallet_performance
+ROWS:  26
+JOIN KEYS: none detected
+FEATURES: entry_quality_score, calculated_at
+OUTCOMES: none detected
+
+COLUMNS:
+  - wallet: TEXT | PRIMARY KEY
+  - resolved_positions: INTEGER | NOT NULL, DEFAULT 0
+  - wins: INTEGER | NOT NULL, DEFAULT 0
+  - losses: INTEGER | NOT NULL, DEFAULT 0
+  - unresolved_mapped_positions: INTEGER | NOT NULL, DEFAULT 0
+  - win_rate: REAL | NOT NULL, DEFAULT 0
+  - total_cost_basis: REAL | NOT NULL, DEFAULT 0
+  - total_settlement_value: REAL | NOT NULL, DEFAULT 0
+  - estimated_profit: REAL | NOT NULL, DEFAULT 0
+  - estimated_roi: REAL | NOT NULL, DEFAULT 0
+  - average_entry_price: REAL | NOT NULL, DEFAULT 0
+  - average_winning_entry: REAL
+  - average_losing_entry: REAL
+  - average_edge_at_entry: REAL | NOT NULL, DEFAULT 0
+  - profit_factor: REAL
+  - payoff_ratio: REAL
+  - weighted_brier_score: REAL
+  - calibration_score: REAL
+  - consistency_score: REAL | NOT NULL, DEFAULT 0
+  - sample_size_score: REAL | NOT NULL, DEFAULT 0
+  - profitability_score: REAL | NOT NULL, DEFAULT 0
+  - accuracy_score: REAL | NOT NULL, DEFAULT 0
+  - entry_quality_score: REAL | NOT NULL, DEFAULT 0
+  - performance_score: REAL | NOT NULL, DEFAULT 0
+  - performance_grade: TEXT | NOT NULL, DEFAULT 'UNRATED'
+  - data_confidence: TEXT | NOT NULL, DEFAULT 'VERY LOW'
+  - mapped_market_count: INTEGER | NOT NULL, DEFAULT 0
+  - first_resolved_scan_at: TEXT
+  - last_resolved_scan_at: TEXT
+  - explanation_json: TEXT
+  - calculated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_wallet_performance_rank (unique=False)
+  - sqlite_autoindex_wallet_performance_1 (unique=True)
+
+SAMPLE ROWS:
+  {"calculated_at": "2026-07-16T14:48:23.687669+00:00", "entry_quality_score": 50.0}
+  {"calculated_at": "2026-07-16T14:48:23.687669+00:00", "entry_quality_score": 50.0}
+  {"calculated_at": "2026-07-16T14:48:23.687669+00:00", "entry_quality_score": 50.0}
+
+CREATE SQL:
+CREATE TABLE wallet_performance (
+                wallet TEXT PRIMARY KEY,
+
+                resolved_positions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                wins INTEGER
+                    NOT NULL DEFAULT 0,
+
+                losses INTEGER
+                    NOT NULL DEFAULT 0,
+
+                unresolved_mapped_positions INTEGER
+                    NOT NULL DEFAULT 0,
+
+                win_rate REAL
+                    NOT NULL DEFAULT 0,
+
+                total_cost_basis REAL
+                    NOT NULL DEFAULT 0,
+
+                total_settlement_value REAL
+                    NOT NULL DEFAULT 0,
+
+                estimated_profit REAL
+                    NOT NULL DEFAULT 0,
+
+                estimated_roi REAL
+                    NOT NULL DEFAULT 0,
+
+                average_entry_price REAL
+                    NOT NULL DEFAULT 0,
+
+                average_winning_entry REAL,
+                average_losing_entry REAL,
+
+                average_edge_at_entry REAL
+                    NOT NULL DEFAULT 0,
+
+                profit_factor REAL,
+                payoff_ratio REAL,
+
+                weighted_brier_score REAL,
+                calibration_score REAL,
+
+                consistency_score REAL
+                    NOT NULL DEFAULT 0,
+
+                sample_size_score REAL
+                    NOT NULL DEFAULT 0,
+
+                profitability_score REAL
+                    NOT NULL DEFAULT 0,
+
+                accuracy_score REAL
+                    NOT NULL DEFAULT 0,
+
+                entry_quality_score REAL
+                    NOT NULL DEFAULT 0,
+
+                performance_score REAL
+                    NOT NULL DEFAULT 0,
+
+                performance_grade TEXT
+                    NOT NULL DEFAULT 'UNRATED',
+
+                data_confidence TEXT
+                    NOT NULL DEFAULT 'VERY LOW',
+
+                mapped_market_count INTEGER
+                    NOT NULL DEFAULT 0,
+
+                first_resolved_scan_at TEXT,
+                last_resolved_scan_at TEXT,
+
+                explanation_json TEXT,
+
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: wallet_performance_history
+ROWS:  52
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - wallet: TEXT | NOT NULL
+  - resolved_positions: INTEGER
+  - wins: INTEGER
+  - losses: INTEGER
+  - win_rate: REAL
+  - total_cost_basis: REAL
+  - total_settlement_value: REAL
+  - estimated_profit: REAL
+  - estimated_roi: REAL
+  - performance_score: REAL
+  - performance_grade: TEXT
+  - data_confidence: TEXT
+  - observed_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_wallet_performance_history_wallet (unique=False)
+
+CREATE SQL:
+CREATE TABLE wallet_performance_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                wallet TEXT NOT NULL,
+
+                resolved_positions INTEGER,
+                wins INTEGER,
+                losses INTEGER,
+
+                win_rate REAL,
+                total_cost_basis REAL,
+                total_settlement_value REAL,
+                estimated_profit REAL,
+                estimated_roi REAL,
+
+                performance_score REAL,
+                performance_grade TEXT,
+                data_confidence TEXT,
+
+                observed_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: wallet_performance_markets
+ROWS:  16
+JOIN KEYS: market_id, condition_id, winning_outcome_name
+FEATURES: calculated_at
+OUTCOMES: resolution_status, winning_outcome_name, settlement_price
+
+COLUMNS:
+  - performance_market_key: TEXT | PRIMARY KEY
+  - wallet: TEXT | NOT NULL
+  - scan_id: INTEGER
+  - scanned_at: TEXT
+  - market_id: TEXT | NOT NULL
+  - title: TEXT
+  - selected_outcome: TEXT
+  - gamma_market_id: TEXT
+  - condition_id: TEXT
+  - resolution_status: TEXT
+  - winning_outcome_name: TEXT
+  - source_outcome_won: INTEGER
+  - source_outcome_lost: INTEGER
+  - shares: REAL | NOT NULL, DEFAULT 0
+  - average_entry_price: REAL | NOT NULL, DEFAULT 0
+  - cost_basis: REAL | NOT NULL, DEFAULT 0
+  - settlement_price: REAL
+  - settlement_value: REAL
+  - estimated_profit: REAL
+  - estimated_roi: REAL
+  - brier_score: REAL
+  - match_method: TEXT
+  - match_confidence: REAL
+  - calculated_at: TEXT | NOT NULL
+  - updated_at: TEXT | NOT NULL
+
+INDEXES:
+  - idx_wallet_performance_markets_market (unique=False)
+  - idx_wallet_performance_markets_wallet (unique=False)
+  - sqlite_autoindex_wallet_performance_markets_1 (unique=True)
+
+SAMPLE ROWS:
+  {"calculated_at": "2026-07-16T14:48:23.687133+00:00", "condition_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "market_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "resolution_status": "LIKELY_RESOLVED", "settlement_price": 0.0, "winning_outcome_name": "No"}
+  {"calculated_at": "2026-07-16T14:48:23.687192+00:00", "condition_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "market_id": "0x375409bc5eeeff961e82b479caeccc20f33d15738e5bce1186d628aa3d9dfb1f", "resolution_status": "LIKELY_RESOLVED", "settlement_price": 0.0, "winning_outcome_name": "No"}
+  {"calculated_at": "2026-07-16T14:48:23.687264+00:00", "condition_id": "0x9b6fef249040fd17e9c107955b37ac2c3e923509b6b0ff01cc463a331ddeb894", "market_id": "0x9b6fef249040fd17e9c107955b37ac2c3e923509b6b0ff01cc463a331ddeb894", "resolution_status": "LIKELY_RESOLVED", "settlement_price": 0.0, "winning_outcome_name": "No"}
+
+CREATE SQL:
+CREATE TABLE wallet_performance_markets (
+                performance_market_key TEXT PRIMARY KEY,
+
+                wallet TEXT NOT NULL,
+
+                scan_id INTEGER,
+                scanned_at TEXT,
+
+                market_id TEXT NOT NULL,
+                title TEXT,
+                selected_outcome TEXT,
+
+                gamma_market_id TEXT,
+                condition_id TEXT,
+
+                resolution_status TEXT,
+                winning_outcome_name TEXT,
+
+                source_outcome_won INTEGER,
+                source_outcome_lost INTEGER,
+
+                shares REAL
+                    NOT NULL DEFAULT 0,
+
+                average_entry_price REAL
+                    NOT NULL DEFAULT 0,
+
+                cost_basis REAL
+                    NOT NULL DEFAULT 0,
+
+                settlement_price REAL,
+
+                settlement_value REAL,
+                estimated_profit REAL,
+                estimated_roi REAL,
+
+                brier_score REAL,
+
+                match_method TEXT,
+                match_confidence REAL,
+
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: wallet_performance_metrics
+ROWS:  6
+JOIN KEYS: none detected
+FEATURES: data_quality_score, methodology_version, calculated_at
+OUTCOMES: none detected
+
+COLUMNS:
+  - wallet: TEXT | PRIMARY KEY
+  - username: TEXT
+  - source_run_id: TEXT | NOT NULL
+  - calculated_at: TEXT | NOT NULL
+  - source_elite_score: REAL | NOT NULL, DEFAULT 0
+  - source_elite_grade: TEXT
+  - primary_category: TEXT
+  - current_position_count: INTEGER | NOT NULL, DEFAULT 0
+  - closed_position_count: INTEGER | NOT NULL, DEFAULT 0
+  - trade_sample_count: INTEGER | NOT NULL, DEFAULT 0
+  - activity_sample_count: INTEGER | NOT NULL, DEFAULT 0
+  - total_markets_traded: INTEGER | NOT NULL, DEFAULT 0
+  - total_current_value: REAL | NOT NULL, DEFAULT 0
+  - total_open_pnl: REAL | NOT NULL, DEFAULT 0
+  - realized_pnl_sample: REAL | NOT NULL, DEFAULT 0
+  - gross_closed_cost_sample: REAL | NOT NULL, DEFAULT 0
+  - realized_roi_sample: REAL | NOT NULL, DEFAULT 0
+  - closed_win_count: INTEGER | NOT NULL, DEFAULT 0
+  - closed_loss_count: INTEGER | NOT NULL, DEFAULT 0
+  - closed_flat_count: INTEGER | NOT NULL, DEFAULT 0
+  - closed_win_rate: REAL | NOT NULL, DEFAULT 0
+  - profit_factor: REAL | NOT NULL, DEFAULT 0
+  - average_closed_pnl: REAL | NOT NULL, DEFAULT 0
+  - median_closed_pnl: REAL | NOT NULL, DEFAULT 0
+  - closed_pnl_volatility: REAL | NOT NULL, DEFAULT 0
+  - max_sample_drawdown: REAL | NOT NULL, DEFAULT 0
+  - profitable_open_position_rate: REAL | NOT NULL, DEFAULT 0
+  - average_position_value: REAL | NOT NULL, DEFAULT 0
+  - median_position_value: REAL | NOT NULL, DEFAULT 0
+  - largest_position_value: REAL | NOT NULL, DEFAULT 0
+  - concentration_ratio: REAL | NOT NULL, DEFAULT 0
+  - open_pnl_ratio: REAL | NOT NULL, DEFAULT 0
+  - buy_trade_count: INTEGER | NOT NULL, DEFAULT 0
+  - sell_trade_count: INTEGER | NOT NULL, DEFAULT 0
+  - trade_buy_ratio: REAL | NOT NULL, DEFAULT 0
+  - average_trade_notional: REAL | NOT NULL, DEFAULT 0
+  - median_trade_notional: REAL | NOT NULL, DEFAULT 0
+  - activity_notional_sample: REAL | NOT NULL, DEFAULT 0
+  - sports_exposure: REAL | NOT NULL, DEFAULT 0
+  - politics_exposure: REAL | NOT NULL, DEFAULT 0
+  - crypto_exposure: REAL | NOT NULL, DEFAULT 0
+  - macro_exposure: REAL | NOT NULL, DEFAULT 0
+  - entertainment_exposure: REAL | NOT NULL, DEFAULT 0
+  - other_exposure: REAL | NOT NULL, DEFAULT 0
+  - favorite_category: TEXT | NOT NULL, DEFAULT 'OTHER'
+  - specialization_score: REAL | NOT NULL, DEFAULT 0
+  - profitability_score: REAL | NOT NULL, DEFAULT 0
+  - consistency_score: REAL | NOT NULL, DEFAULT 0
+  - risk_control_score: REAL | NOT NULL, DEFAULT 0
+  - activity_score: REAL | NOT NULL, DEFAULT 0
+  - scale_score: REAL | NOT NULL, DEFAULT 0
+  - data_quality_score: REAL | NOT NULL, DEFAULT 0
+  - institutional_score: REAL | NOT NULL, DEFAULT 0
+  - institutional_grade: TEXT | NOT NULL, DEFAULT 'UNRATED'
+  - risk_profile: TEXT | NOT NULL, DEFAULT 'UNKNOWN'
+  - activity_style: TEXT | NOT NULL, DEFAULT 'UNKNOWN'
+  - sample_limited: INTEGER | NOT NULL, DEFAULT 1
+  - methodology_version: TEXT | NOT NULL, DEFAULT '1.0'
+
+INDEXES:
+  - idx_wallet_performance_category (unique=False)
+  - idx_wallet_performance_rating (unique=False)
+  - sqlite_autoindex_wallet_performance_metrics_1 (unique=True)
+
+SAMPLE ROWS:
+  {"calculated_at": "2026-07-19T06:56:59+00:00", "data_quality_score": 80.8, "methodology_version": "1.0"}
+  {"calculated_at": "2026-07-19T06:56:59+00:00", "data_quality_score": 100.0, "methodology_version": "1.0"}
+  {"calculated_at": "2026-07-19T06:56:59+00:00", "data_quality_score": 50.8, "methodology_version": "1.0"}
+
+CREATE SQL:
+CREATE TABLE "wallet_performance_metrics" (
+                    wallet TEXT PRIMARY KEY,
+                    username TEXT,
+                    source_run_id TEXT NOT NULL,
+                    calculated_at TEXT NOT NULL,
+                    source_elite_score REAL NOT NULL DEFAULT 0,
+                    source_elite_grade TEXT,
+                    primary_category TEXT,
+
+                    current_position_count INTEGER NOT NULL DEFAULT 0,
+                    closed_position_count INTEGER NOT NULL DEFAULT 0,
+                    trade_sample_count INTEGER NOT NULL DEFAULT 0,
+                    activity_sample_count INTEGER NOT NULL DEFAULT 0,
+                    total_markets_traded INTEGER NOT NULL DEFAULT 0,
+
+                    total_current_value REAL NOT NULL DEFAULT 0,
+                    total_open_pnl REAL NOT NULL DEFAULT 0,
+                    realized_pnl_sample REAL NOT NULL DEFAULT 0,
+                    gross_closed_cost_sample REAL NOT NULL DEFAULT 0,
+                    realized_roi_sample REAL NOT NULL DEFAULT 0,
+
+                    closed_win_count INTEGER NOT NULL DEFAULT 0,
+                    closed_loss_count INTEGER NOT NULL DEFAULT 0,
+                    closed_flat_count INTEGER NOT NULL DEFAULT 0,
+                    closed_win_rate REAL NOT NULL DEFAULT 0,
+                    profit_factor REAL NOT NULL DEFAULT 0,
+                    average_closed_pnl REAL NOT NULL DEFAULT 0,
+                    median_closed_pnl REAL NOT NULL DEFAULT 0,
+                    closed_pnl_volatility REAL NOT NULL DEFAULT 0,
+                    max_sample_drawdown REAL NOT NULL DEFAULT 0,
+
+                    profitable_open_position_rate REAL NOT NULL DEFAULT 0,
+                    average_position_value REAL NOT NULL DEFAULT 0,
+                    median_position_value REAL NOT NULL DEFAULT 0,
+                    largest_position_value REAL NOT NULL DEFAULT 0,
+                    concentration_ratio REAL NOT NULL DEFAULT 0,
+                    open_pnl_ratio REAL NOT NULL DEFAULT 0,
+
+                    buy_trade_count INTEGER NOT NULL DEFAULT 0,
+                    sell_trade_count INTEGER NOT NULL DEFAULT 0,
+                    trade_buy_ratio REAL NOT NULL DEFAULT 0,
+                    average_trade_notional REAL NOT NULL DEFAULT 0,
+                    median_trade_notional REAL NOT NULL DEFAULT 0,
+                    activity_notional_sample REAL NOT NULL DEFAULT 0,
+
+                    sports_exposure REAL NOT NULL DEFAULT 0,
+                    politics_exposure REAL NOT NULL DEFAULT 0,
+                    crypto_exposure REAL NOT NULL DEFAULT 0,
+                    macro_exposure REAL NOT NULL DEFAULT 0,
+                    entertainment_exposure REAL NOT NULL DEFAULT 0,
+                    other_exposure REAL NOT NULL DEFAULT 0,
+                    favorite_category TEXT NOT NULL DEFAULT 'OTHER',
+                    specialization_score REAL NOT NULL DEFAULT 0,
+
+                    profitability_score REAL NOT NULL DEFAULT 0,
+                    consistency_score REAL NOT NULL DEFAULT 0,
+                    risk_control_score REAL NOT NULL DEFAULT 0,
+                    activity_score REAL NOT NULL DEFAULT 0,
+                    scale_score REAL NOT NULL DEFAULT 0,
+                    data_quality_score REAL NOT NULL DEFAULT 0,
+                    institutional_score REAL NOT NULL DEFAULT 0,
+                    institutional_grade TEXT NOT NULL DEFAULT 'UNRATED',
+                    risk_profile TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    activity_style TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    sample_limited INTEGER NOT NULL DEFAULT 1,
+                    methodology_version TEXT NOT NULL DEFAULT '1.0'
+                )
+
+------------------------------------------------------------------------------------------------------------------------
+TABLE: wallet_performance_runs
+ROWS:  2
+JOIN KEYS: none detected
+FEATURES: none detected
+OUTCOMES: none detected
+
+COLUMNS:
+  - id: INTEGER | PRIMARY KEY
+  - started_at: TEXT | NOT NULL
+  - finished_at: TEXT
+  - elapsed_seconds: REAL
+  - latest_positions_loaded: INTEGER | NOT NULL, DEFAULT 0
+  - resolved_position_rows: INTEGER | NOT NULL, DEFAULT 0
+  - wallets_scored: INTEGER | NOT NULL, DEFAULT 0
+  - performance_rows_saved: INTEGER | NOT NULL, DEFAULT 0
+  - market_rows_saved: INTEGER | NOT NULL, DEFAULT 0
+  - history_rows_saved: INTEGER | NOT NULL, DEFAULT 0
+  - status: TEXT | NOT NULL
+  - error_message: TEXT
+
+CREATE SQL:
+CREATE TABLE wallet_performance_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                elapsed_seconds REAL,
+
+                latest_positions_loaded INTEGER
+                    NOT NULL DEFAULT 0,
+
+                resolved_position_rows INTEGER
+                    NOT NULL DEFAULT 0,
+
+                wallets_scored INTEGER
+                    NOT NULL DEFAULT 0,
+
+                performance_rows_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                market_rows_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                history_rows_saved INTEGER
+                    NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                error_message TEXT
+            )
+
+========================================================================================================================
+JOIN COMPATIBILITY
+========================================================================================================================
+- backtest_results <-> institutional_decision_diagnostic_history: market_id
+- backtest_results <-> institutional_decision_diagnostics: market_id
+- backtest_results <-> institutional_decision_history: market_id
+- backtest_results <-> institutional_decision_history_v2: market_id
+- backtest_results <-> institutional_decisions: market_id
+- backtest_results <-> institutional_decisions_v2: market_id
+- backtest_results <-> market_opportunity_history: winning_outcome
+- backtest_results <-> market_prediction_history: winning_outcome
+- backtest_results <-> market_predictions: market_id, winning_outcome
+- backtest_results <-> master_opportunity_history: market_id
+- backtest_results <-> opportunity_score_history: market_id
+- backtest_results <-> opportunity_scores: market_id
+- backtest_results <-> wallet_performance_markets: market_id
+- institutional_decision_diagnostic_history <-> institutional_decision_diagnostic_runs: run_id
+- institutional_decision_diagnostic_history <-> institutional_decision_diagnostics: market_id, opportunity_key, outcome, run_id
+- institutional_decision_diagnostic_history <-> institutional_decision_history: market_id, opportunity_key, outcome, run_id
+- institutional_decision_diagnostic_history <-> institutional_decision_history_v2: market_id, opportunity_key, outcome, run_id
+- institutional_decision_diagnostic_history <-> institutional_decision_runs: run_id
+- institutional_decision_diagnostic_history <-> institutional_decision_runs_v2: run_id
+- institutional_decision_diagnostic_history <-> institutional_decisions: market_id, opportunity_key, outcome
+- institutional_decision_diagnostic_history <-> institutional_decisions_v2: market_id, opportunity_key, outcome
+- institutional_decision_diagnostic_history <-> market_opportunity_history: opportunity_key
+- institutional_decision_diagnostic_history <-> market_predictions: market_id
+- institutional_decision_diagnostic_history <-> master_opportunity_history: market_id, opportunity_key, outcome
+- institutional_decision_diagnostic_history <-> opportunity_score_history: market_id, opportunity_key, outcome
+- institutional_decision_diagnostic_history <-> opportunity_scores: market_id, opportunity_key, outcome
+- institutional_decision_diagnostic_history <-> performance_analytics_runs: run_id
+- institutional_decision_diagnostic_history <-> wallet_performance_markets: market_id
+- institutional_decision_diagnostic_runs <-> institutional_decision_diagnostics: run_id
+- institutional_decision_diagnostic_runs <-> institutional_decision_history: run_id
+- institutional_decision_diagnostic_runs <-> institutional_decision_history_v2: run_id
+- institutional_decision_diagnostic_runs <-> institutional_decision_runs: run_id
+- institutional_decision_diagnostic_runs <-> institutional_decision_runs_v2: run_id
+- institutional_decision_diagnostic_runs <-> performance_analytics_runs: run_id
+- institutional_decision_diagnostics <-> institutional_decision_history: market_id, opportunity_key, outcome, run_id
+- institutional_decision_diagnostics <-> institutional_decision_history_v2: market_id, opportunity_key, outcome, run_id
+- institutional_decision_diagnostics <-> institutional_decision_runs: run_id
+- institutional_decision_diagnostics <-> institutional_decision_runs_v2: run_id
+- institutional_decision_diagnostics <-> institutional_decisions: market_id, opportunity_key, outcome
+- institutional_decision_diagnostics <-> institutional_decisions_v2: market_id, opportunity_key, outcome
+- institutional_decision_diagnostics <-> market_opportunity_history: opportunity_key
+- institutional_decision_diagnostics <-> market_predictions: market_id
+- institutional_decision_diagnostics <-> master_opportunity_history: market_id, opportunity_key, outcome
+- institutional_decision_diagnostics <-> opportunity_score_history: market_id, opportunity_key, outcome
+- institutional_decision_diagnostics <-> opportunity_scores: market_id, opportunity_key, outcome
+- institutional_decision_diagnostics <-> performance_analytics_runs: run_id
+- institutional_decision_diagnostics <-> wallet_performance_markets: market_id
+- institutional_decision_history <-> institutional_decision_history_v2: market_id, opportunity_key, outcome, run_id
+- institutional_decision_history <-> institutional_decision_runs: run_id
+- institutional_decision_history <-> institutional_decision_runs_v2: run_id
+- institutional_decision_history <-> institutional_decisions: market_id, opportunity_key, outcome
+- institutional_decision_history <-> institutional_decisions_v2: market_id, opportunity_key, outcome
+- institutional_decision_history <-> market_opportunity_history: opportunity_key
+- institutional_decision_history <-> market_predictions: market_id
+- institutional_decision_history <-> master_opportunity_history: market_id, opportunity_key, outcome
+- institutional_decision_history <-> opportunity_score_history: market_id, opportunity_key, outcome
+- institutional_decision_history <-> opportunity_scores: market_id, opportunity_key, outcome
+- institutional_decision_history <-> performance_analytics_runs: run_id
+- institutional_decision_history <-> wallet_performance_markets: market_id
+- institutional_decision_history_v2 <-> institutional_decision_runs: run_id
+- institutional_decision_history_v2 <-> institutional_decision_runs_v2: run_id
+- institutional_decision_history_v2 <-> institutional_decisions: market_id, opportunity_key, outcome
+- institutional_decision_history_v2 <-> institutional_decisions_v2: market_id, opportunity_key, outcome
+- institutional_decision_history_v2 <-> market_opportunity_history: opportunity_key
+- institutional_decision_history_v2 <-> market_predictions: market_id
+- institutional_decision_history_v2 <-> master_opportunity_history: market_id, opportunity_key, outcome
+- institutional_decision_history_v2 <-> opportunity_score_history: market_id, opportunity_key, outcome
+- institutional_decision_history_v2 <-> opportunity_scores: market_id, opportunity_key, outcome
+- institutional_decision_history_v2 <-> performance_analytics_runs: run_id
+- institutional_decision_history_v2 <-> wallet_performance_markets: market_id
+- institutional_decision_runs <-> institutional_decision_runs_v2: run_id
+- institutional_decision_runs <-> performance_analytics_runs: run_id
+- institutional_decision_runs_v2 <-> performance_analytics_runs: run_id
+- institutional_decisions <-> institutional_decisions_v2: market_id, opportunity_key, outcome
+- institutional_decisions <-> market_opportunity_history: opportunity_key
+- institutional_decisions <-> market_predictions: market_id
+- institutional_decisions <-> master_opportunity_history: market_id, opportunity_key, outcome
+- institutional_decisions <-> opportunity_score_history: market_id, opportunity_key, outcome
+- institutional_decisions <-> opportunity_scores: market_id, opportunity_key, outcome
+- institutional_decisions <-> wallet_performance_markets: market_id
+- institutional_decisions_v2 <-> market_opportunity_history: opportunity_key
+- institutional_decisions_v2 <-> market_predictions: market_id
+- institutional_decisions_v2 <-> master_opportunity_history: market_id, opportunity_key, outcome
+- institutional_decisions_v2 <-> opportunity_score_history: market_id, opportunity_key, outcome
+- institutional_decisions_v2 <-> opportunity_scores: market_id, opportunity_key, outcome
+- institutional_decisions_v2 <-> wallet_performance_markets: market_id
+- mapped_market_results <-> market_opportunity_history: condition_id
+- mapped_market_results <-> market_prediction_history: condition_id
+- mapped_market_results <-> market_predictions: condition_id
+- mapped_market_results <-> market_resolution_outcomes: condition_id
+- mapped_market_results <-> market_resolutions: condition_id, winning_outcome_name
+- mapped_market_results <-> wallet_performance_markets: condition_id, winning_outcome_name
+- market_opportunity_history <-> market_prediction_history: condition_id, winning_outcome
+- market_opportunity_history <-> market_predictions: condition_id, winning_outcome
+- market_opportunity_history <-> market_resolution_outcomes: condition_id
+- market_opportunity_history <-> market_resolutions: condition_id
+- market_opportunity_history <-> master_opportunity_history: opportunity_key
+- market_opportunity_history <-> opportunity_score_history: opportunity_key
+- market_opportunity_history <-> opportunity_scores: opportunity_key
+- market_opportunity_history <-> wallet_performance_markets: condition_id
+- market_prediction_history <-> market_predictions: condition_id, winning_outcome
+- market_prediction_history <-> market_resolution_outcomes: condition_id
+- market_prediction_history <-> market_resolutions: condition_id
+- market_prediction_history <-> wallet_performance_markets: condition_id
+- market_predictions <-> market_resolution_outcomes: condition_id
+- market_predictions <-> market_resolutions: condition_id
+- market_predictions <-> master_opportunity_history: market_id
+- market_predictions <-> opportunity_score_history: market_id
+- market_predictions <-> opportunity_scores: market_id
+- market_predictions <-> wallet_performance_markets: condition_id, market_id
+- market_resolution_outcomes <-> market_resolutions: condition_id, resolution_key
+- market_resolution_outcomes <-> wallet_performance_markets: condition_id
+- market_resolutions <-> wallet_performance_markets: condition_id, winning_outcome_name
+- master_opportunity_history <-> opportunity_score_history: market_id, opportunity_key, outcome
+- master_opportunity_history <-> opportunity_scores: market_id, opportunity_key, outcome
+- master_opportunity_history <-> wallet_performance_markets: market_id
+- opportunity_score_history <-> opportunity_scores: market_id, opportunity_key, outcome
+- opportunity_score_history <-> wallet_performance_markets: market_id
+- opportunity_scores <-> wallet_performance_markets: market_id
+
+========================================================================================================================
+RECOMMENDED SOURCE ROLES
+========================================================================================================================
+- backtest_results: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=64
+- institutional_decision_diagnostic_history: FEATURE SOURCE, JOINABLE | rows=131
+- institutional_decision_diagnostic_runs: FEATURE SOURCE, JOINABLE | rows=1
+- institutional_decision_diagnostics: FEATURE SOURCE, JOINABLE | rows=131
+- institutional_decision_history: FEATURE SOURCE, JOINABLE | rows=131
+- institutional_decision_history_v2: FEATURE SOURCE, JOINABLE | rows=0
+- institutional_decision_runs: FEATURE SOURCE, JOINABLE | rows=4
+- institutional_decision_runs_v2: FEATURE SOURCE, JOINABLE | rows=7
+- institutional_decisions: FEATURE SOURCE, JOINABLE | rows=131
+- institutional_decisions_v2: FEATURE SOURCE, JOINABLE | rows=0
+- mapped_market_results: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=116
+- market_opportunity_history: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=5
+- market_prediction_history: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=38
+- market_predictions: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=38
+- market_resolution_outcomes: OUTCOME SOURCE, JOINABLE | rows=41,206
+- market_resolutions: OUTCOME SOURCE, JOINABLE | rows=20,603
+- master_opportunity_history: FEATURE SOURCE, JOINABLE | rows=131
+- opportunity_score_history: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=501
+- opportunity_scores: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=131
+- performance_analytics_runs: JOINABLE | rows=2
+- wallet_performance: FEATURE SOURCE | rows=26
+- wallet_performance_markets: FEATURE SOURCE, OUTCOME SOURCE, JOINABLE | rows=16
+- wallet_performance_metrics: FEATURE SOURCE | rows=6
+
+========================================================================================================================
+LEARNING READINESS SUMMARY
+========================================================================================================================
+Feature-source tables: 20
+Outcome-source tables: 10
+Joinable tables:       21
+Compatible pairs:      119
+
+No tables or source files were modified.
+========================================================================================================================

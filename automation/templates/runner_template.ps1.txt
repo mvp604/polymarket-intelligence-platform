@@ -1,0 +1,32 @@
+﻿$ErrorActionPreference = "Stop"
+
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $projectRoot
+
+$pythonFile = Join-Path `
+    $projectRoot `
+    "src\{{ENGINE_SLUG}}.py"
+
+if (-not (Test-Path $pythonFile -PathType Leaf)) {
+    throw "Engine not found: $pythonFile"
+}
+
+python $pythonFile
+
+if ($LASTEXITCODE -ne 0) {
+    throw "{{ENGINE_TITLE}} failed with exit code $LASTEXITCODE"
+}
+
+$reportPath = Join-Path `
+    $projectRoot `
+    "reports\{{REPORT_FOLDER}}\latest.html"
+
+if (Test-Path $reportPath) {
+    Start-Process $reportPath
+}
+
+Write-Host ""
+Write-Host "{{ENGINE_TITLE}} complete."
+Write-Host "Latest report:"
+Write-Host $reportPath
+

@@ -1,0 +1,868 @@
+﻿from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import sqlite3
+import statistics
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DATABASE_PATH = ROOT / "database" / "polymarket.db"
+REPORT_DIR = ROOT / "reports" / "wallet_profiler"
+PROFILE_VERSION = 2
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso_now() -> str:
+    return utc_now().isoformat(timespec="seconds")
+
+
+def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    return max(low, min(high, value))
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone() is not None
+
+
+def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {
+        str(row[1])
+        for row in connection.execute(
+            f'PRAGMA table_info("{table}")'
+        ).fetchall()
+    }
+
+
+def require_schema(connection: sqlite3.Connection) -> None:
+    required = {
+        "wallet_intelligence_profiles",
+        "wallet_intelligence_snapshots",
+        "wallet_intelligence_runs",
+        "positions",
+    }
+    missing = [table for table in required if not table_exists(connection, table)]
+    if missing:
+        raise RuntimeError(
+            "Required tables are missing: " + ", ".join(sorted(missing))
+        )
+
+
+def percentile_score(value: float, population: list[float], higher_is_better: bool = True) -> float:
+    if not population:
+        return 50.0
+    ordered = sorted(population)
+    below = sum(1 for item in ordered if item < value)
+    equal = sum(1 for item in ordered if item == value)
+    percentile = (below + 0.5 * equal) / len(ordered) * 100.0
+    return percentile if higher_is_better else 100.0 - percentile
+
+
+def grade(score: float, confidence: float) -> str:
+    if confidence < 25:
+        return "PROVISIONAL"
+    if score >= 92:
+        return "S"
+    if score >= 85:
+        return "A+"
+    if score >= 78:
+        return "A"
+    if score >= 70:
+        return "B+"
+    if score >= 62:
+        return "B"
+    if score >= 52:
+        return "C"
+    return "D"
+
+
+@dataclass
+class WalletMetrics:
+    wallet: str
+    first_seen_at: str
+    last_seen_at: str
+    positions_observed: int
+    markets_tracked: int
+    active_markets: int
+    total_current_value: float
+    total_pnl: float
+    roi: float
+    average_position_value: float
+    median_position_value: float
+    largest_position_value: float
+    concentration_ratio: float
+    average_entry_price: float
+    average_current_price: float
+    weighted_entry_edge: float
+    positive_positions: int
+    negative_positions: int
+    observed_win_rate: float
+    pnl_volatility: float
+    recent_pnl: float
+    recent_roi: float
+    conviction_score: float
+    consistency_score: float
+    risk_score: float
+    recent_form_score: float
+    timing_score: float
+    confidence_score: float
+    overall_score: float
+    overall_grade: str
+    strongest_category: str | None
+    weakest_category: str | None
+    notes: str
+
+
+def load_wallet_rows(connection: sqlite3.Connection) -> dict[str, list[sqlite3.Row]]:
+    position_columns = table_columns(connection, "positions")
+
+    selected = [
+        "wallet",
+        "market_id",
+        "title",
+        "outcome",
+        "shares",
+        "average_price",
+        "current_price",
+        "current_value",
+        "cash_pnl",
+        "percent_pnl",
+        "scan_id",
+    ]
+
+    select_sql = ", ".join(
+        (
+            f'p."{column}" AS "{column}"'
+            if column in position_columns
+            else f'NULL AS "{column}"'
+        )
+        for column in selected
+    )
+
+    join_sql = ""
+    scanned_at_sql = "NULL AS scanned_at"
+    if (
+        "scan_id" in position_columns
+        and table_exists(connection, "wallet_scans")
+        and {"id", "scanned_at"}.issubset(table_columns(connection, "wallet_scans"))
+    ):
+        join_sql = "LEFT JOIN wallet_scans ws ON ws.id = p.scan_id"
+        scanned_at_sql = "ws.scanned_at AS scanned_at"
+
+    rows = connection.execute(
+        f"""
+        SELECT {select_sql}, {scanned_at_sql}
+        FROM positions p
+        {join_sql}
+        WHERE p.wallet IS NOT NULL
+          AND TRIM(p.wallet) <> ''
+        ORDER BY p.wallet, scanned_at
+        """
+    ).fetchall()
+
+    grouped: dict[str, list[sqlite3.Row]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["wallet"]).strip(), []).append(row)
+    return grouped
+
+
+def calculate_raw_metrics(wallet: str, rows: list[sqlite3.Row]) -> dict[str, Any]:
+    values = [max(0.0, safe_float(row["current_value"])) for row in rows]
+    pnls = [safe_float(row["cash_pnl"]) for row in rows]
+    percent_pnls = [safe_float(row["percent_pnl"]) for row in rows]
+    entries = [safe_float(row["average_price"]) for row in rows if row["average_price"] is not None]
+    currents = [safe_float(row["current_price"]) for row in rows if row["current_price"] is not None]
+    market_ids = {
+        str(row["market_id"])
+        for row in rows
+        if row["market_id"] is not None
+    }
+    scan_times = [
+        str(row["scanned_at"])
+        for row in rows
+        if row["scanned_at"] is not None
+    ]
+
+    total_value = sum(values)
+    total_pnl = sum(pnls)
+    cost_basis = max(total_value - total_pnl, 0.0)
+    roi = total_pnl / cost_basis if cost_basis > 0 else 0.0
+    average_value = statistics.mean(values) if values else 0.0
+    median_value = statistics.median(values) if values else 0.0
+    largest_value = max(values) if values else 0.0
+    concentration = largest_value / total_value if total_value > 0 else 0.0
+
+    entry_average = statistics.mean(entries) if entries else 0.0
+    current_average = statistics.mean(currents) if currents else 0.0
+
+    edge_numerator = 0.0
+    edge_denominator = 0.0
+    for row in rows:
+        entry = safe_float(row["average_price"])
+        current = safe_float(row["current_price"])
+        value = max(safe_float(row["current_value"]), 0.0)
+        if entry > 0 and current > 0 and value > 0:
+            edge_numerator += (current - entry) * value
+            edge_denominator += value
+    weighted_edge = edge_numerator / edge_denominator if edge_denominator > 0 else 0.0
+
+    positive_positions = sum(1 for pnl in pnls if pnl > 0)
+    negative_positions = sum(1 for pnl in pnls if pnl < 0)
+    decisive = positive_positions + negative_positions
+    observed_win_rate = positive_positions / decisive if decisive else 0.0
+
+    pnl_volatility = (
+        statistics.pstdev(percent_pnls)
+        if len(percent_pnls) >= 2
+        else 0.0
+    )
+
+    # Latest quartile of observations serves as a provisional recent-form window.
+    recent_count = max(1, math.ceil(len(rows) * 0.25))
+    recent_rows = rows[-recent_count:]
+    recent_value = sum(max(0.0, safe_float(row["current_value"])) for row in recent_rows)
+    recent_pnl = sum(safe_float(row["cash_pnl"]) for row in recent_rows)
+    recent_cost = max(recent_value - recent_pnl, 0.0)
+    recent_roi = recent_pnl / recent_cost if recent_cost > 0 else 0.0
+
+    first_seen = min(scan_times) if scan_times else iso_now()
+    last_seen = max(scan_times) if scan_times else iso_now()
+
+    return {
+        "wallet": wallet,
+        "rows": rows,
+        "positions_observed": len(rows),
+        "markets_tracked": len(market_ids),
+        "active_markets": len(market_ids),
+        "first_seen_at": first_seen,
+        "last_seen_at": last_seen,
+        "total_current_value": total_value,
+        "total_pnl": total_pnl,
+        "roi": roi,
+        "average_position_value": average_value,
+        "median_position_value": median_value,
+        "largest_position_value": largest_value,
+        "concentration_ratio": concentration,
+        "average_entry_price": entry_average,
+        "average_current_price": current_average,
+        "weighted_entry_edge": weighted_edge,
+        "positive_positions": positive_positions,
+        "negative_positions": negative_positions,
+        "observed_win_rate": observed_win_rate,
+        "pnl_volatility": pnl_volatility,
+        "recent_pnl": recent_pnl,
+        "recent_roi": recent_roi,
+    }
+
+
+def score_wallets(raw: list[dict[str, Any]]) -> list[WalletMetrics]:
+    position_counts = [float(item["positions_observed"]) for item in raw]
+    market_counts = [float(item["markets_tracked"]) for item in raw]
+    total_values = [float(item["total_current_value"]) for item in raw]
+    rois = [float(item["roi"]) for item in raw]
+    weighted_edges = [float(item["weighted_entry_edge"]) for item in raw]
+    concentrations = [float(item["concentration_ratio"]) for item in raw]
+    volatilities = [float(item["pnl_volatility"]) for item in raw]
+    recent_rois = [float(item["recent_roi"]) for item in raw]
+
+    results: list[WalletMetrics] = []
+
+    for item in raw:
+        positions_observed = int(item["positions_observed"])
+        markets_tracked = int(item["markets_tracked"])
+
+        data_depth = clamp(
+            35.0 * math.log1p(positions_observed)
+            + 15.0 * math.log1p(markets_tracked)
+        )
+        confidence_score = clamp(
+            0.55 * data_depth
+            + 0.25 * percentile_score(positions_observed, position_counts)
+            + 0.20 * percentile_score(markets_tracked, market_counts)
+        )
+
+        conviction_score = clamp(
+            0.45 * percentile_score(item["average_position_value"], total_values)
+            + 0.35 * percentile_score(item["largest_position_value"], total_values)
+            + 0.20 * percentile_score(item["total_current_value"], total_values)
+        )
+
+        consistency_score = clamp(
+            0.50 * percentile_score(item["observed_win_rate"], [
+                float(x["observed_win_rate"]) for x in raw
+            ])
+            + 0.30 * percentile_score(item["pnl_volatility"], volatilities, False)
+            + 0.20 * percentile_score(item["roi"], rois)
+        )
+
+        risk_score = clamp(
+            0.50 * percentile_score(item["concentration_ratio"], concentrations, False)
+            + 0.30 * percentile_score(item["pnl_volatility"], volatilities, False)
+            + 0.20 * percentile_score(item["markets_tracked"], market_counts)
+        )
+
+        recent_form_score = clamp(
+            0.60 * percentile_score(item["recent_roi"], recent_rois)
+            + 0.40 * percentile_score(item["recent_pnl"], [
+                float(x["recent_pnl"]) for x in raw
+            ])
+        )
+
+        timing_score = clamp(
+            0.70 * percentile_score(item["weighted_entry_edge"], weighted_edges)
+            + 0.30 * percentile_score(item["roi"], rois)
+        )
+
+        performance_score = clamp(
+            0.55 * percentile_score(item["roi"], rois)
+            + 0.25 * percentile_score(item["total_pnl"], [
+                float(x["total_pnl"]) for x in raw
+            ])
+            + 0.20 * percentile_score(item["weighted_entry_edge"], weighted_edges)
+        )
+
+        overall_score = clamp(
+            0.24 * performance_score
+            + 0.17 * timing_score
+            + 0.16 * consistency_score
+            + 0.14 * risk_score
+            + 0.12 * recent_form_score
+            + 0.09 * conviction_score
+            + 0.08 * confidence_score
+        )
+
+        notes = []
+        if confidence_score < 25:
+            notes.append("insufficient history for a stable rating")
+        if item["concentration_ratio"] > 0.70:
+            notes.append("high position concentration")
+        if item["weighted_entry_edge"] > 0:
+            notes.append("positive observed entry edge")
+        elif item["weighted_entry_edge"] < 0:
+            notes.append("negative observed entry edge")
+        if item["roi"] > 0:
+            notes.append("positive observed ROI")
+        elif item["roi"] < 0:
+            notes.append("negative observed ROI")
+        if not notes:
+            notes.append("neutral observed profile")
+
+        results.append(
+            WalletMetrics(
+                wallet=item["wallet"],
+                first_seen_at=item["first_seen_at"],
+                last_seen_at=item["last_seen_at"],
+                positions_observed=positions_observed,
+                markets_tracked=markets_tracked,
+                active_markets=item["active_markets"],
+                total_current_value=round(item["total_current_value"], 2),
+                total_pnl=round(item["total_pnl"], 2),
+                roi=round(item["roi"], 6),
+                average_position_value=round(item["average_position_value"], 2),
+                median_position_value=round(item["median_position_value"], 2),
+                largest_position_value=round(item["largest_position_value"], 2),
+                concentration_ratio=round(item["concentration_ratio"], 6),
+                average_entry_price=round(item["average_entry_price"], 6),
+                average_current_price=round(item["average_current_price"], 6),
+                weighted_entry_edge=round(item["weighted_entry_edge"], 6),
+                positive_positions=item["positive_positions"],
+                negative_positions=item["negative_positions"],
+                observed_win_rate=round(item["observed_win_rate"], 6),
+                pnl_volatility=round(item["pnl_volatility"], 6),
+                recent_pnl=round(item["recent_pnl"], 2),
+                recent_roi=round(item["recent_roi"], 6),
+                conviction_score=round(conviction_score, 2),
+                consistency_score=round(consistency_score, 2),
+                risk_score=round(risk_score, 2),
+                recent_form_score=round(recent_form_score, 2),
+                timing_score=round(timing_score, 2),
+                confidence_score=round(confidence_score, 2),
+                overall_score=round(overall_score, 2),
+                overall_grade=grade(overall_score, confidence_score),
+                strongest_category=None,
+                weakest_category=None,
+                notes="; ".join(notes),
+            )
+        )
+
+    results.sort(
+        key=lambda item: (
+            item.overall_score,
+            item.confidence_score,
+            item.total_pnl,
+        ),
+        reverse=True,
+    )
+    return results
+
+
+def persist(connection: sqlite3.Connection, profiles: list[WalletMetrics]) -> tuple[int, int]:
+    started_at = iso_now()
+    configuration = {
+        "profile_version": PROFILE_VERSION,
+        "ranking_method": "cross-sectional percentile scoring",
+        "unknown_resolved_metrics": "not treated as zero",
+    }
+
+    cursor = connection.execute(
+        """
+        INSERT INTO wallet_intelligence_runs (
+            started_at,
+            status,
+            source_rows,
+            wallets_seen,
+            configuration_json
+        )
+        VALUES (?, 'RUNNING', ?, ?, ?)
+        """,
+        (
+            started_at,
+            sum(item.positions_observed for item in profiles),
+            len(profiles),
+            json.dumps(configuration),
+        ),
+    )
+    run_id = int(cursor.lastrowid)
+    snapshot_at = iso_now()
+
+    for rank, profile in enumerate(profiles, start=1):
+        connection.execute(
+            """
+            INSERT INTO wallet_intelligence_profiles (
+                wallet,
+                first_seen_at,
+                last_seen_at,
+                status,
+                overall_score,
+                overall_grade,
+                confidence_score,
+                current_rank,
+                markets_tracked,
+                resolved_markets,
+                wins,
+                losses,
+                win_rate,
+                realized_pnl,
+                unrealized_pnl,
+                total_pnl,
+                roi,
+                average_position_value,
+                median_position_value,
+                average_entry_price,
+                average_current_price,
+                average_entry_edge,
+                average_holding_hours,
+                timing_score,
+                conviction_score,
+                consistency_score,
+                risk_score,
+                influence_score,
+                specialization_score,
+                recent_form_score,
+                strongest_category,
+                weakest_category,
+                profile_version,
+                calculated_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                ?, ?, ?, 'ACTIVE',
+                ?, ?, ?, ?,
+                ?, 0, ?, ?,
+                ?, 0, ?, ?, ?,
+                ?, ?, ?, ?, ?, 0,
+                ?, ?, ?, ?, 0, 0, ?,
+                ?, ?, ?, ?, ?, ?
+            )
+            ON CONFLICT(wallet) DO UPDATE SET
+                first_seen_at = excluded.first_seen_at,
+                last_seen_at = excluded.last_seen_at,
+                status = excluded.status,
+                overall_score = excluded.overall_score,
+                overall_grade = excluded.overall_grade,
+                confidence_score = excluded.confidence_score,
+                current_rank = excluded.current_rank,
+                markets_tracked = excluded.markets_tracked,
+                wins = excluded.wins,
+                losses = excluded.losses,
+                win_rate = excluded.win_rate,
+                unrealized_pnl = excluded.unrealized_pnl,
+                total_pnl = excluded.total_pnl,
+                roi = excluded.roi,
+                average_position_value = excluded.average_position_value,
+                median_position_value = excluded.median_position_value,
+                average_entry_price = excluded.average_entry_price,
+                average_current_price = excluded.average_current_price,
+                average_entry_edge = excluded.average_entry_edge,
+                timing_score = excluded.timing_score,
+                conviction_score = excluded.conviction_score,
+                consistency_score = excluded.consistency_score,
+                risk_score = excluded.risk_score,
+                recent_form_score = excluded.recent_form_score,
+                strongest_category = excluded.strongest_category,
+                weakest_category = excluded.weakest_category,
+                profile_version = excluded.profile_version,
+                calculated_at = excluded.calculated_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                profile.wallet,
+                profile.first_seen_at,
+                profile.last_seen_at,
+                profile.overall_score,
+                profile.overall_grade,
+                profile.confidence_score,
+                rank,
+                profile.markets_tracked,
+                profile.positive_positions,
+                profile.negative_positions,
+                profile.observed_win_rate,
+                profile.total_pnl,
+                profile.total_pnl,
+                profile.roi,
+                profile.average_position_value,
+                profile.median_position_value,
+                profile.average_entry_price,
+                profile.average_current_price,
+                profile.weighted_entry_edge,
+                profile.timing_score,
+                profile.conviction_score,
+                profile.consistency_score,
+                profile.risk_score,
+                profile.recent_form_score,
+                profile.strongest_category,
+                profile.weakest_category,
+                PROFILE_VERSION,
+                snapshot_at,
+                snapshot_at,
+                snapshot_at,
+            ),
+        )
+
+        snapshot_metrics = asdict(profile)
+        connection.execute(
+            """
+            INSERT INTO wallet_intelligence_snapshots (
+                run_id,
+                wallet,
+                category,
+                overall_rank,
+                overall_score,
+                overall_grade,
+                confidence_score,
+                win_rate,
+                roi,
+                total_pnl,
+                timing_score,
+                conviction_score,
+                consistency_score,
+                risk_score,
+                influence_score,
+                recent_form_score,
+                metrics_json,
+                snapshot_at
+            )
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+            """,
+            (
+                run_id,
+                profile.wallet,
+                rank,
+                profile.overall_score,
+                profile.overall_grade,
+                profile.confidence_score,
+                profile.observed_win_rate,
+                profile.roi,
+                profile.total_pnl,
+                profile.timing_score,
+                profile.conviction_score,
+                profile.consistency_score,
+                profile.risk_score,
+                profile.recent_form_score,
+                json.dumps(snapshot_metrics),
+                snapshot_at,
+            ),
+        )
+
+    connection.execute(
+        """
+        UPDATE wallet_intelligence_runs
+        SET completed_at = ?,
+            status = 'COMPLETED',
+            wallets_profiled = ?,
+            snapshots_written = ?,
+            diagnostics_json = ?
+        WHERE id = ?
+        """,
+        (
+            iso_now(),
+            len(profiles),
+            len(profiles),
+            json.dumps({
+                "provisional_metrics": [
+                    "observed win rate",
+                    "unrealized ROI",
+                    "recent form",
+                    "timing from entry edge",
+                ],
+                "not_yet_available": [
+                    "resolved-market win rate",
+                    "realized ROI",
+                    "holding duration",
+                    "maximum drawdown",
+                    "influence",
+                    "category specialization",
+                ],
+            }),
+            run_id,
+        ),
+    )
+    return run_id, len(profiles)
+
+
+def write_reports(profiles: list[WalletMetrics], run_id: int | None, dry_run: bool) -> dict[str, Path]:
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+    payload = {
+        "generated_at": iso_now(),
+        "run_id": run_id,
+        "dry_run": dry_run,
+        "wallets_profiled": len(profiles),
+        "methodology": {
+            "profile_version": PROFILE_VERSION,
+            "ratings_are_provisional": True,
+            "resolved_market_metrics_available": False,
+            "scores": [
+                "overall",
+                "timing",
+                "conviction",
+                "consistency",
+                "risk",
+                "recent form",
+                "confidence",
+            ],
+        },
+        "profiles": [asdict(profile) for profile in profiles],
+    }
+
+    json_path = REPORT_DIR / f"wallet_profiles_{timestamp}.json"
+    txt_path = REPORT_DIR / f"wallet_profiles_{timestamp}.txt"
+    html_path = REPORT_DIR / f"wallet_profiles_{timestamp}.html"
+
+    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    lines = [
+        "ELITE WALLET PROFILER",
+        "=" * 110,
+        f"Generated: {payload['generated_at']}",
+        f"Run ID: {run_id}",
+        f"Wallets: {len(profiles)}",
+        "Ratings: PROVISIONAL until resolved-market history is available",
+        "",
+    ]
+    for rank, profile in enumerate(profiles, start=1):
+        lines.extend([
+            f"{rank}. {profile.wallet}",
+            f"   Grade: {profile.overall_grade} | Overall: {profile.overall_score:.2f} | Confidence: {profile.confidence_score:.2f}",
+            f"   Markets: {profile.markets_tracked} | Positions: {profile.positions_observed}",
+            f"   Value: ${profile.total_current_value:,.2f} | P&L: ${profile.total_pnl:,.2f} | ROI: {profile.roi:.2%}",
+            f"   Timing: {profile.timing_score:.2f} | Conviction: {profile.conviction_score:.2f} | Consistency: {profile.consistency_score:.2f} | Risk: {profile.risk_score:.2f}",
+            f"   Notes: {profile.notes}",
+            "",
+        ])
+    txt_path.write_text("\n".join(lines), encoding="utf-8")
+
+    rows = "".join(
+        f"""
+        <tr>
+          <td>{rank}</td>
+          <td><code>{profile.wallet}</code></td>
+          <td><strong>{profile.overall_grade}</strong><br>{profile.overall_score:.2f}</td>
+          <td>{profile.confidence_score:.2f}</td>
+          <td>{profile.markets_tracked}<br><small>{profile.positions_observed} observations</small></td>
+          <td>${profile.total_current_value:,.2f}</td>
+          <td>${profile.total_pnl:,.2f}<br><small>{profile.roi:.2%}</small></td>
+          <td>{profile.timing_score:.2f}</td>
+          <td>{profile.conviction_score:.2f}</td>
+          <td>{profile.consistency_score:.2f}</td>
+          <td>{profile.risk_score:.2f}</td>
+          <td>{profile.recent_form_score:.2f}</td>
+          <td>{profile.notes}</td>
+        </tr>
+        """
+        for rank, profile in enumerate(profiles, start=1)
+    )
+
+    html_path.write_text(
+        f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elite Wallet Profiler</title>
+<style>
+body {{ margin:0; font-family:Arial,sans-serif; background:#f4f6f8; color:#172033; }}
+header {{ background:#111827; color:#fff; padding:28px; }}
+main {{ max-width:1600px; margin:auto; padding:24px; }}
+section {{ background:#fff; padding:18px; border-radius:12px; margin-bottom:20px; box-shadow:0 2px 10px rgba(0,0,0,.06); overflow-x:auto; }}
+.notice {{ border-left:5px solid #f59e0b; background:#fff7ed; }}
+table {{ border-collapse:collapse; width:100%; min-width:1450px; }}
+th, td {{ padding:10px; text-align:left; border-bottom:1px solid #e5e7eb; vertical-align:top; }}
+small {{ color:#667085; }}
+code {{ font-size:12px; }}
+</style>
+</head>
+<body>
+<header>
+<h1>Elite Wallet Profiler v1</h1>
+<div>Generated: {payload['generated_at']} Â· Wallets: {len(profiles)} Â· Run ID: {run_id}</div>
+</header>
+<main>
+<section class="notice">
+<strong>Provisional ratings:</strong> These scores use currently observed positions and P&amp;L. Resolved-market win rate, realized returns, holding duration, drawdown, category expertise, and influence are not yet available and are not treated as zero.
+</section>
+<section>
+<h2>Wallet Intelligence Board</h2>
+<table>
+<thead>
+<tr>
+<th>Rank</th><th>Wallet</th><th>Grade / Overall</th><th>Confidence</th>
+<th>Markets</th><th>Current Value</th><th>P&amp;L / ROI</th>
+<th>Timing</th><th>Conviction</th><th>Consistency</th><th>Risk</th><th>Recent Form</th><th>Notes</th>
+</tr>
+</thead>
+<tbody>{rows}</tbody>
+</table>
+</section>
+</main>
+</body>
+</html>
+""",
+        encoding="utf-8",
+    )
+
+    latest = {
+        "json": REPORT_DIR / "latest.json",
+        "txt": REPORT_DIR / "latest.txt",
+        "html": REPORT_DIR / "latest.html",
+    }
+    latest["json"].write_bytes(json_path.read_bytes())
+    latest["txt"].write_bytes(txt_path.read_bytes())
+    latest["html"].write_bytes(html_path.read_bytes())
+
+    return {
+        "json": json_path,
+        "txt": txt_path,
+        "html": html_path,
+        "latest_json": latest["json"],
+        "latest_txt": latest["txt"],
+        "latest_html": latest["html"],
+    }
+
+
+def run(dry_run: bool) -> tuple[list[WalletMetrics], int | None, dict[str, Path]]:
+    if not DATABASE_PATH.exists():
+        raise FileNotFoundError(f"Database not found: {DATABASE_PATH}")
+
+    connection = sqlite3.connect(str(DATABASE_PATH))
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA busy_timeout = 15000")
+
+    try:
+        require_schema(connection)
+        grouped = load_wallet_rows(connection)
+        raw = [
+            calculate_raw_metrics(wallet, rows)
+            for wallet, rows in grouped.items()
+            if rows
+        ]
+        profiles = score_wallets(raw)
+
+        run_id = None
+        if not dry_run:
+            with connection:
+                run_id, _ = persist(connection, profiles)
+
+        reports = write_reports(profiles, run_id, dry_run)
+        return profiles, run_id, reports
+    finally:
+        connection.close()
+
+
+def self_test() -> None:
+    population = [1.0, 2.0, 3.0, 4.0]
+    assert percentile_score(4.0, population) > percentile_score(1.0, population)
+    assert percentile_score(1.0, population, False) > percentile_score(4.0, population, False)
+    assert grade(95.0, 10.0) == "PROVISIONAL"
+    assert grade(95.0, 80.0) == "S"
+    print("Self-test passed.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Profile tracked Polymarket wallets.")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-open", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+
+    if args.self_test:
+        self_test()
+        return
+
+    profiles, run_id, reports = run(args.dry_run)
+
+    print()
+    print("=" * 110)
+    print("ELITE WALLET PROFILER")
+    print("=" * 110)
+    print(f"Mode:                       {'DRY RUN' if args.dry_run else 'EXECUTION'}")
+    print(f"Wallets profiled:           {len(profiles)}")
+    print(f"Run ID:                     {run_id}")
+    print(f"Latest HTML:                {reports['latest_html']}")
+    print(f"Latest JSON:                {reports['latest_json']}")
+    print(f"Latest TXT:                 {reports['latest_txt']}")
+    print(f"Database modified:          {'NO' if args.dry_run else 'YES â€” intelligence tables only'}")
+    print("Existing positions changed: NO")
+    print("Ratings:                    PROVISIONAL")
+    print("=" * 110)
+
+    if not args.no_open and reports["latest_html"].exists():
+        os.startfile(str(reports["latest_html"]))
+
+
+if __name__ == "__main__":
+    main()
+
+

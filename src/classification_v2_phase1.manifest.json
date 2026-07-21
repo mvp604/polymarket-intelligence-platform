@@ -1,0 +1,13 @@
+﻿{
+  "id": "market_classifier_v2_phase1",
+  "name": "Market Classification Engine v2 Phase 1",
+  "version": "2.0.0-phase1",
+  "runner": "run_market_classifier_v2_phase1.ps1",
+  "enabled": false,
+  "required": false,
+  "stage": "development",
+  "order": 40,
+  "dependencies": [],
+  "latest_report": null,
+  "timeout_seconds": 300
+}

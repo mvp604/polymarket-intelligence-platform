@@ -1,0 +1,13 @@
+﻿{
+  "id": "elite_wallet_database",
+  "name": "Elite Wallet Intelligence Database",
+  "version": "1.0.0",
+  "runner": "run_elite_wallet_database.ps1",
+  "enabled": true,
+  "required": true,
+  "stage": "foundation",
+  "order": 40,
+  "dependencies": [],
+  "latest_report": "reports/elite_wallet_database/latest_schema_report.json",
+  "timeout_seconds": 300
+}

@@ -14,103 +14,172 @@ def connect_database() -> sqlite3.Connection:
 
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
 
     # Make SQLite enforce relationships between tables.
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA busy_timeout = 30000")
 
     return connection
 
 
 def create_tables() -> None:
-    """Create all database tables if they do not already exist."""
+    """Create all database tables and indexes if they do not already exist."""
 
     connection = connect_database()
     cursor = connection.cursor()
 
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS wallet_scans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wallet TEXT NOT NULL,
-            scanned_at TEXT NOT NULL
+    try:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wallet_scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet TEXT NOT NULL,
+                scanned_at TEXT NOT NULL
+            )
+            """
         )
-        """
-    )
 
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS positions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scan_id INTEGER NOT NULL,
-            wallet TEXT NOT NULL,
-            market_id TEXT,
-            title TEXT NOT NULL,
-            outcome TEXT,
-            shares REAL DEFAULT 0,
-            average_price REAL DEFAULT 0,
-            current_price REAL DEFAULT 0,
-            current_value REAL DEFAULT 0,
-            cash_pnl REAL DEFAULT 0,
-            percent_pnl REAL DEFAULT 0,
-            FOREIGN KEY (scan_id) REFERENCES wallet_scans(id)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id INTEGER NOT NULL,
+                wallet TEXT NOT NULL,
+                market_id TEXT,
+                title TEXT NOT NULL,
+                outcome TEXT,
+                shares REAL DEFAULT 0,
+                average_price REAL DEFAULT 0,
+                current_price REAL DEFAULT 0,
+                current_value REAL DEFAULT 0,
+                cash_pnl REAL DEFAULT 0,
+                percent_pnl REAL DEFAULT 0,
+                FOREIGN KEY (scan_id) REFERENCES wallet_scans(id)
+            )
+            """
         )
-        """
-    )
 
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS consensus_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            market_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            outcome TEXT NOT NULL,
-            wallet_count INTEGER NOT NULL,
-            combined_shares REAL NOT NULL,
-            combined_value REAL NOT NULL,
-            combined_pnl REAL NOT NULL,
-            conviction_score REAL NOT NULL,
-            conviction_grade TEXT NOT NULL,
-            average_entry_price REAL,
-            average_current_price REAL,
-            observed_price_move REAL,
-            scanned_at TEXT NOT NULL
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS consensus_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                wallet_count INTEGER NOT NULL,
+                combined_shares REAL NOT NULL,
+                combined_value REAL NOT NULL,
+                combined_pnl REAL NOT NULL,
+                conviction_score REAL NOT NULL,
+                conviction_grade TEXT NOT NULL,
+                average_entry_price REAL,
+                average_current_price REAL,
+                observed_price_move REAL,
+                scanned_at TEXT NOT NULL
+            )
+            """
         )
-        """
-    )
 
-    # Helpful indexes for faster history and wallet queries.
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_wallet_scans_wallet
-        ON wallet_scans(wallet)
-        """
-    )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tracked_wallets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                nickname TEXT,
+                category TEXT,
+                notes TEXT,
+                active INTEGER NOT NULL DEFAULT 1
+                    CHECK (active IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_scanned_at TEXT,
+                last_scan_status TEXT,
+                last_error TEXT
+            )
+            """
+        )
 
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_positions_scan_id
-        ON positions(scan_id)
-        """
-    )
+        # Seed the tracking registry from wallets already present in scan history.
+        # Existing installations therefore become pipeline-ready automatically.
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO tracked_wallets (
+                wallet,
+                nickname,
+                category,
+                notes,
+                active,
+                created_at,
+                updated_at
+            )
+            SELECT DISTINCT
+                TRIM(wallet),
+                NULL,
+                NULL,
+                'Imported automatically from wallet_scans history.',
+                1,
+                ?,
+                ?
+            FROM wallet_scans
+            WHERE TRIM(COALESCE(wallet, '')) <> ''
+            """,
+            (now, now),
+        )
 
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_positions_market_outcome
-        ON positions(market_id, outcome)
-        """
-    )
+        # Helpful indexes for faster history and wallet queries.
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wallet_scans_wallet
+            ON wallet_scans(wallet)
+            """
+        )
 
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_consensus_history_market_outcome
-        ON consensus_history(market_id, outcome)
-        """
-    )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_positions_scan_id
+            ON positions(scan_id)
+            """
+        )
 
-    connection.commit()
-    connection.close()
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_positions_market_outcome
+            ON positions(market_id, outcome)
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_consensus_history_market_outcome
+            ON consensus_history(market_id, outcome)
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_tracked_wallets_active
+            ON tracked_wallets(active)
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_tracked_wallets_category
+            ON tracked_wallets(category)
+            """
+        )
+
+        connection.commit()
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
 
 
 def safe_number(value: Any) -> float:
@@ -122,12 +191,282 @@ def safe_number(value: Any) -> float:
         return 0.0
 
 
+def normalize_wallet(wallet: str) -> str:
+    """Normalize a wallet address for consistent storage and comparison."""
+
+    return str(wallet or "").strip().lower()
+
+
+def add_tracked_wallet(
+    wallet: str,
+    nickname: str | None = None,
+    category: str | None = None,
+    notes: str | None = None,
+    active: bool = True,
+) -> int:
+    """
+    Add a wallet to the tracking registry or update its metadata.
+
+    Returns:
+        Database ID of the tracked wallet.
+    """
+
+    normalized_wallet = normalize_wallet(wallet)
+
+    if not normalized_wallet:
+        raise ValueError("Wallet address cannot be empty.")
+
+    create_tables()
+
+    now = datetime.now(timezone.utc).isoformat()
+    connection = connect_database()
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO tracked_wallets (
+                wallet,
+                nickname,
+                category,
+                notes,
+                active,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(wallet) DO UPDATE SET
+                nickname = COALESCE(excluded.nickname, tracked_wallets.nickname),
+                category = COALESCE(excluded.category, tracked_wallets.category),
+                notes = COALESCE(excluded.notes, tracked_wallets.notes),
+                active = excluded.active,
+                updated_at = excluded.updated_at
+            """,
+            (
+                normalized_wallet,
+                nickname.strip() if nickname else None,
+                category.strip() if category else None,
+                notes.strip() if notes else None,
+                1 if active else 0,
+                now,
+                now,
+            ),
+        )
+
+        row = connection.execute(
+            """
+            SELECT id
+            FROM tracked_wallets
+            WHERE wallet = ?
+            """,
+            (normalized_wallet,),
+        ).fetchone()
+
+        connection.commit()
+
+        if row is None:
+            raise RuntimeError("Tracked wallet was saved but could not be reloaded.")
+
+        return int(row["id"])
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
+def get_tracked_wallets(active_only: bool = False) -> list[dict[str, Any]]:
+    """Return tracked wallets, optionally limited to active wallets."""
+
+    create_tables()
+    connection = connect_database()
+
+    try:
+        if active_only:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    wallet,
+                    nickname,
+                    category,
+                    notes,
+                    active,
+                    created_at,
+                    updated_at,
+                    last_scanned_at,
+                    last_scan_status,
+                    last_error
+                FROM tracked_wallets
+                WHERE active = 1
+                ORDER BY
+                    CASE WHEN nickname IS NULL OR nickname = '' THEN 1 ELSE 0 END,
+                    nickname COLLATE NOCASE,
+                    wallet
+                """
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    wallet,
+                    nickname,
+                    category,
+                    notes,
+                    active,
+                    created_at,
+                    updated_at,
+                    last_scanned_at,
+                    last_scan_status,
+                    last_error
+                FROM tracked_wallets
+                ORDER BY
+                    active DESC,
+                    CASE WHEN nickname IS NULL OR nickname = '' THEN 1 ELSE 0 END,
+                    nickname COLLATE NOCASE,
+                    wallet
+                """
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        connection.close()
+
+
+def get_active_wallets() -> list[dict[str, Any]]:
+    """Return every active wallet configured for automated scanning."""
+
+    return get_tracked_wallets(active_only=True)
+
+
+def set_tracked_wallet_active(wallet: str, active: bool) -> bool:
+    """Enable or disable automated scanning for one wallet."""
+
+    normalized_wallet = normalize_wallet(wallet)
+
+    if not normalized_wallet:
+        raise ValueError("Wallet address cannot be empty.")
+
+    create_tables()
+    connection = connect_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE tracked_wallets
+            SET
+                active = ?,
+                updated_at = ?
+            WHERE wallet = ?
+            """,
+            (
+                1 if active else 0,
+                datetime.now(timezone.utc).isoformat(),
+                normalized_wallet,
+            ),
+        )
+
+        connection.commit()
+        return cursor.rowcount > 0
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
+def remove_tracked_wallet(wallet: str) -> bool:
+    """
+    Remove a wallet from the tracking registry.
+
+    Historical wallet_scans and positions are intentionally preserved.
+    """
+
+    normalized_wallet = normalize_wallet(wallet)
+
+    if not normalized_wallet:
+        raise ValueError("Wallet address cannot be empty.")
+
+    create_tables()
+    connection = connect_database()
+
+    try:
+        cursor = connection.execute(
+            """
+            DELETE FROM tracked_wallets
+            WHERE wallet = ?
+            """,
+            (normalized_wallet,),
+        )
+
+        connection.commit()
+        return cursor.rowcount > 0
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
+def update_tracked_wallet_scan_status(
+    wallet: str,
+    *,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    """Record the latest automated scan result for one tracked wallet."""
+
+    normalized_wallet = normalize_wallet(wallet)
+
+    if not normalized_wallet:
+        return
+
+    create_tables()
+    now = datetime.now(timezone.utc).isoformat()
+    connection = connect_database()
+
+    try:
+        connection.execute(
+            """
+            UPDATE tracked_wallets
+            SET
+                last_scanned_at = ?,
+                last_scan_status = ?,
+                last_error = ?,
+                updated_at = ?
+            WHERE wallet = ?
+            """,
+            (
+                now,
+                str(status or "UNKNOWN").strip().upper(),
+                str(error_message).strip()[:2000] if error_message else None,
+                now,
+                normalized_wallet,
+            ),
+        )
+        connection.commit()
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
 def save_consensus_history(results: list[dict[str, Any]]) -> int:
     """
     Save one historical snapshot for every scored consensus result.
 
-    All results from the same conviction-engine run receive the same
-    UTC timestamp.
+    All results from the same conviction-engine run receive the same UTC
+    timestamp.
 
     Returns:
         Number of consensus rows saved.
@@ -142,19 +481,15 @@ def save_consensus_history(results: list[dict[str, Any]]) -> int:
     cursor = connection.cursor()
 
     scanned_at = datetime.now(timezone.utc).isoformat()
+    saved_count = 0
 
     try:
         for result in results:
             market_id = str(result.get("market_id") or "").strip()
-            title = str(
-                result.get("title") or "Unknown market"
-            ).strip()
-            outcome = str(
-                result.get("outcome") or "Unknown"
-            ).strip()
+            title = str(result.get("title") or "Unknown market").strip()
+            outcome = str(result.get("outcome") or "Unknown").strip()
 
             if not market_id:
-                # Do not store unusable consensus records.
                 continue
 
             cursor.execute(
@@ -192,10 +527,10 @@ def save_consensus_history(results: list[dict[str, Any]]) -> int:
                     scanned_at,
                 ),
             )
+            saved_count += 1
 
         connection.commit()
-
-        return cursor.rowcount if cursor.rowcount > 0 else len(results)
+        return saved_count
 
     except Exception:
         connection.rollback()
@@ -216,6 +551,11 @@ def save_wallet_scan(
         Newly created scan ID.
     """
 
+    normalized_wallet = normalize_wallet(wallet)
+
+    if not normalized_wallet:
+        raise ValueError("Wallet address cannot be empty.")
+
     create_tables()
 
     connection = connect_database()
@@ -233,7 +573,7 @@ def save_wallet_scan(
             VALUES (?, ?)
             """,
             (
-                wallet,
+                normalized_wallet,
                 scanned_at,
             ),
         )
@@ -241,9 +581,7 @@ def save_wallet_scan(
         scan_id = cursor.lastrowid
 
         if scan_id is None:
-            raise RuntimeError(
-                "SQLite did not return a wallet scan ID."
-            )
+            raise RuntimeError("SQLite did not return a wallet scan ID.")
 
         for position in positions:
             market_id = (
@@ -254,15 +592,8 @@ def save_wallet_scan(
                 or ""
             )
 
-            title = (
-                position.get("title")
-                or "Unknown market"
-            )
-
-            outcome = (
-                position.get("outcome")
-                or "Unknown"
-            )
+            title = position.get("title") or "Unknown market"
+            outcome = position.get("outcome") or "Unknown"
 
             cursor.execute(
                 """
@@ -283,7 +614,7 @@ def save_wallet_scan(
                 """,
                 (
                     scan_id,
-                    wallet,
+                    normalized_wallet,
                     str(market_id),
                     str(title),
                     str(outcome),
@@ -310,6 +641,7 @@ def save_wallet_scan(
 def count_wallet_scans(wallet: str) -> int:
     """Return the number of stored scans for one wallet."""
 
+    normalized_wallet = normalize_wallet(wallet)
     connection = connect_database()
 
     try:
@@ -317,9 +649,9 @@ def count_wallet_scans(wallet: str) -> int:
             """
             SELECT COUNT(*) AS total
             FROM wallet_scans
-            WHERE wallet = ?
+            WHERE LOWER(wallet) = ?
             """,
-            (wallet,),
+            (normalized_wallet,),
         ).fetchone()
 
         return int(row["total"]) if row else 0
@@ -334,6 +666,7 @@ def get_previous_scan_id(
 ) -> int | None:
     """Return the scan immediately before the current scan."""
 
+    normalized_wallet = normalize_wallet(wallet)
     connection = connect_database()
 
     try:
@@ -341,13 +674,13 @@ def get_previous_scan_id(
             """
             SELECT id
             FROM wallet_scans
-            WHERE wallet = ?
+            WHERE LOWER(wallet) = ?
               AND id < ?
             ORDER BY id DESC
             LIMIT 1
             """,
             (
-                wallet,
+                normalized_wallet,
                 current_scan_id,
             ),
         ).fetchone()
@@ -396,5 +729,8 @@ def get_positions_for_scan(
 if __name__ == "__main__":
     create_tables()
 
+    tracked_count = len(get_tracked_wallets())
+
     print("SQLite database created successfully.")
     print(f"Database location: {DATABASE_PATH.resolve()}")
+    print(f"Tracked wallets: {tracked_count}")

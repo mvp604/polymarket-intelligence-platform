@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "engines": [
+    {
+      "slug": "threshold_optimizer",
+      "title": "Threshold Optimizer",
+      "engine_path": "src\\threshold_optimizer.py",
+      "runner_path": "run_threshold_optimizer.ps1",
+      "report_directory": "reports\\threshold_optimizer",
+      "created_at": "2026-07-20T11:13:25+00:00",
+      "enabled": true
+    }
+  ]
+}

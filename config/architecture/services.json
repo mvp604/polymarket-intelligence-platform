@@ -1,0 +1,46 @@
+{
+    "schema_version":  "1.0",
+    "services":  [
+                     {
+                         "name":  "INGESTION",
+                         "description":  "Collects raw data from official and approved sources."
+                     },
+                     {
+                         "name":  "IDENTITY",
+                         "description":  "Resolves source identifiers into canonical identities."
+                     },
+                     {
+                         "name":  "MARKET_STATE",
+                         "description":  "Maintains normalized market status, prices and lifecycle."
+                     },
+                     {
+                         "name":  "WALLET_INTELLIGENCE",
+                         "description":  "Measures wallet behavior, performance and specialization."
+                     },
+                     {
+                         "name":  "MARKET_INTELLIGENCE",
+                         "description":  "Produces consensus, flow, evolution and prediction features."
+                     },
+                     {
+                         "name":  "DECISION",
+                         "description":  "Combines evidence into explainable recommendations."
+                     },
+                     {
+                         "name":  "LEARNING",
+                         "description":  "Evaluates outcomes, calibration and methodology changes."
+                     },
+                     {
+                         "name":  "DELIVERY",
+                         "description":  "Publishes dashboards, alerts, reports and API results."
+                     },
+                     {
+                         "name":  "ORCHESTRATION",
+                         "description":  "Coordinates the end-to-end platform pipeline."
+                     },
+                     {
+                         "name":  "LEGACY",
+                         "description":  "Contains frozen or pending-migration components."
+                     }
+                 ],
+    "architecture_version":  "0.6.0"
+}

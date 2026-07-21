@@ -1,0 +1,595 @@
+POLYMARKET INTELLIGENCE PLATFORM
+UNIFIED CLASSIFICATION UPGRADE SNAPSHOT
+Created: 2026-07-20 13:40:58
+Project: C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform
+====================================================================================================
+
+====================================================================================================
+FILE: src\classification_v2\classifier.py
+====================================================================================================
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .category_detector import detect_category
+from .models import Detection
+from .parser import parse_title
+from .sport_detector import detect_sport
+
+
+@dataclass(frozen=True)
+class Phase1Classification:
+    title: str
+    normalized_title: str
+    category: Detection
+    sport: Detection
+
+
+def classify_phase1(title: str) -> Phase1Classification:
+    parsed = parse_title(title)
+    sport = detect_sport(parsed)
+    category = detect_category(parsed)
+
+    if sport.label is not None:
+        category = Detection(
+            label="Sports",
+            confidence=max(0.90, sport.confidence),
+            evidence=("sport-detected", *sport.evidence),
+            method="sport_override_v2",
+        )
+
+    category.validate()
+    sport.validate()
+
+    return Phase1Classification(
+        title=title,
+        normalized_title=parsed.normalized,
+        category=category,
+        sport=sport,
+    )
+
+
+
+====================================================================================================
+FILE: src\classification_v2\confidence.py
+====================================================================================================
+from __future__ import annotations
+
+
+DEFAULT_COMPONENT_WEIGHTS: dict[str, float] = {
+    "category": 0.15,
+    "sport": 0.25,
+    "league": 0.30,
+    "market_type": 0.30,
+    "event_type": 0.20,
+}
+
+
+def calculate_coverage(
+    matched_rule_types: set[str],
+    available_rule_types: set[str],
+) -> float:
+    """
+    Calculate how much of the available classification registry
+    produced a successful match.
+    """
+
+    if not available_rule_types:
+        return 0.0
+
+    matched_available_types = (
+        matched_rule_types.intersection(
+            available_rule_types
+        )
+    )
+
+    coverage = (
+        len(matched_available_types)
+        / len(available_rule_types)
+    )
+
+    return round(coverage, 4)
+
+
+def aggregate_confidence(
+    component_confidences: dict[str, float],
+    available_rule_types: set[str],
+) -> tuple[float, float]:
+    """
+    Combine individual registry match confidence scores into one
+    unified confidence score.
+
+    Returns:
+        unified_confidence
+        coverage
+    """
+
+    matched_rule_types = set(
+        component_confidences
+    )
+
+    coverage = calculate_coverage(
+        matched_rule_types,
+        available_rule_types,
+    )
+
+    if not component_confidences:
+        return 0.10, coverage
+
+    weighted_total = 0.0
+    weight_total = 0.0
+
+    for rule_type, confidence in (
+        component_confidences.items()
+    ):
+        weight = DEFAULT_COMPONENT_WEIGHTS.get(
+            rule_type,
+            0.20,
+        )
+
+        weighted_total += confidence * weight
+        weight_total += weight
+
+    if weight_total <= 0:
+        return 0.10, coverage
+
+    weighted_average = (
+        weighted_total / weight_total
+    )
+
+    coverage_multiplier = (
+        0.75 + (0.25 * coverage)
+    )
+
+    final_confidence = (
+        weighted_average
+        * coverage_multiplier
+    )
+
+    final_confidence = min(
+        max(final_confidence, 0.10),
+        0.99,
+    )
+
+    return round(final_confidence, 4), coverage
+
+====================================================================================================
+FILE: src\classification_v2\matching_engine.py
+====================================================================================================
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from .registry.loader import get_rules
+from .registry.models import RegistryRule
+
+
+@dataclass(frozen=True)
+class MatchResult:
+    rule_id: str | None
+    rule_type: str
+    value: str | None
+    confidence: float
+    evidence: tuple[str, ...]
+    category: str | None = None
+    sport: str | None = None
+
+
+class RegistryMatcher:
+    @staticmethod
+    def normalize(text: str) -> str:
+        return " ".join(
+            text.strip().lower().split()
+        )
+
+    @staticmethod
+    def find_alias_matches(
+        text: str,
+        rule: RegistryRule,
+    ) -> tuple[str, ...]:
+        return tuple(
+            alias
+            for alias in rule.aliases
+            if re.search(
+                alias,
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    def match(
+        self,
+        text: str,
+        rule_type: str,
+    ) -> MatchResult:
+        normalized = self.normalize(text)
+
+        best_rule: RegistryRule | None = None
+        best_matches: tuple[str, ...] = ()
+
+        for rule in get_rules(rule_type):
+            matches = self.find_alias_matches(
+                normalized,
+                rule,
+            )
+
+            if not matches:
+                continue
+
+            if best_rule is None:
+                best_rule = rule
+                best_matches = matches
+                continue
+
+            current_score = (
+                len(matches),
+                rule.confidence,
+                max(len(alias) for alias in matches),
+            )
+
+            best_score = (
+                len(best_matches),
+                best_rule.confidence,
+                max(len(alias) for alias in best_matches),
+            )
+
+            if current_score > best_score:
+                best_rule = rule
+                best_matches = matches
+
+        if best_rule is None:
+            return MatchResult(
+                rule_id=None,
+                rule_type=rule_type,
+                value=None,
+                confidence=0.10,
+                evidence=(
+                    "no-registry-match",
+                ),
+            )
+
+        confidence = min(
+            best_rule.confidence
+            + 0.015 * (len(best_matches) - 1),
+            0.99,
+        )
+
+        return MatchResult(
+            rule_id=best_rule.rule_id,
+            rule_type=best_rule.rule_type,
+            value=best_rule.value,
+            confidence=confidence,
+            evidence=tuple(
+                f"matched:{alias}"
+                for alias in best_matches
+            ),
+            category=best_rule.category,
+            sport=best_rule.sport,
+        )
+
+
+====================================================================================================
+FILE: src\classification_v2\models.py
+====================================================================================================
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Detection:
+    label: str | None
+    confidence: float
+    evidence: tuple[str, ...]
+    method: str
+
+    def validate(self) -> None:
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"Invalid confidence: {self.confidence}")
+        if self.label is None and self.confidence > 0.5:
+            raise ValueError("Unknown labels cannot have high confidence.")
+
+
+
+====================================================================================================
+FILE: src\classification_v2\registry\__init__.py
+====================================================================================================
+from .loader import (
+    discover_plugin_names,
+    get_registry,
+    get_rules,
+    registry_manifest,
+    registry_sources,
+    registry_summary,
+)
+from .metadata import registry_metadata
+from .models import RegistryRule
+
+
+__all__ = [
+    "RegistryRule",
+    "discover_plugin_names",
+    "get_registry",
+    "get_rules",
+    "registry_manifest",
+    "registry_metadata",
+    "registry_sources",
+    "registry_summary",
+]
+
+
+====================================================================================================
+FILE: src\classification_v2_registry_cli.py
+====================================================================================================
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import asdict
+
+from classification_v2.market_type_tests import (
+    run_tests as run_market_type_tests,
+)
+from classification_v2.matching_engine import (
+    RegistryMatcher,
+)
+from classification_v2.registry.loader import (
+    registry_manifest,
+    registry_sources,
+    registry_summary,
+)
+from classification_v2.registry_plugin_tests import (
+    run_tests as run_plugin_tests,
+)
+from classification_v2.registry_tests import (
+    run_tests as run_registry_tests,
+)
+from classification_v2.registry_version_tests import (
+    run_tests as run_version_tests,
+)
+from platform_version import version_info
+
+
+MODULE_VERSION = "2.5.0-market-types"
+
+
+def print_json(
+    result: dict[str, object],
+) -> None:
+    result["module_version"] = MODULE_VERSION
+
+    print(
+        json.dumps(
+            result,
+            indent=2,
+        )
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Classification v2 Plugin-Based "
+            "Registry and Matching Engine"
+        )
+    )
+
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--market-type-test",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--plugin-test",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--version-test",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--manifest",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--sources",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--version",
+        action="store_true",
+    )
+
+    parser.add_argument("--type")
+    parser.add_argument("--title")
+
+    args = parser.parse_args()
+
+    if args.self_test:
+        run_registry_tests()
+        run_plugin_tests()
+        run_market_type_tests()
+        run_version_tests()
+        return
+
+    if args.market_type_test:
+        run_market_type_tests()
+        return
+
+    if args.plugin_test:
+        run_plugin_tests()
+        return
+
+    if args.version_test:
+        run_version_tests()
+        return
+
+    if args.summary:
+        print_json(
+            registry_summary()
+        )
+        return
+
+    if args.manifest:
+        print_json(
+            registry_manifest()
+        )
+        return
+
+    if args.sources:
+        print_json(
+            {
+                "plugins": registry_sources(),
+            }
+        )
+        return
+
+    if args.version:
+        print_json(
+            version_info()
+        )
+        return
+
+    if not args.type or not args.title:
+        parser.error(
+            "--type and --title are required "
+            "unless a control flag is used"
+        )
+
+    matcher = RegistryMatcher()
+
+    result = asdict(
+        matcher.match(
+            args.title,
+            args.type,
+        )
+    )
+
+    print_json(result)
+
+
+if __name__ == "__main__":
+    main()
+
+
+====================================================================================================
+FILE: src\platform_version.py
+====================================================================================================
+from __future__ import annotations
+
+
+PLATFORM_NAME = "Polymarket Intelligence Platform"
+PLATFORM_VERSION = "0.4.0"
+CLASSIFICATION_ENGINE_VERSION = "2.5.0"
+
+
+def version_info() -> dict[str, str]:
+    return {
+        "platform_name": PLATFORM_NAME,
+        "platform_version": PLATFORM_VERSION,
+        "classification_engine_version": (
+            CLASSIFICATION_ENGINE_VERSION
+        ),
+    }
+
+
+====================================================================================================
+FILE: run_classification_v2_registry.ps1
+====================================================================================================
+$ErrorActionPreference = "Stop"
+
+$projectRoot = Split-Path -Parent `
+    $MyInvocation.MyCommand.Path
+
+Set-Location $projectRoot
+
+python `
+    .\src\classification_v2_registry_cli.py `
+    @args
+
+exit $LASTEXITCODE
+
+
+====================================================================================================
+DIRECTORY: src\classification_v2
+====================================================================================================
+
+FullName                                                                                                                                  Length LastWriteTi
+                                                                                                                                                 me         
+--------                                                                                                                                  ------ -----------
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry                                                  2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__                                               2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\category_detector.py                               2446   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\classifier.py                                      1019   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\confidence.py                                      2079   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\league_detector.py                                 5638   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\league_tests.py                                    2814   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\market_type_tests.py                               4126   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\matching_engine.py                                 2818   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\models.py                                          508    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\parser.py                                          841    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry_plugin_tests.py                           3097   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry_tests.py                                  2901   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry_version_tests.py                          1804   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\sport_detector.py                                  2882   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\taxonomy.py                                        501    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\tests.py                                           2036   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__init__.py                                        53     2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__                                      2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\leagues.py                                6856   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\loader.py                                 3797   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\market_types.py                           8374   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\metadata.py                               516    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\models.py                                 1160   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\sports.py                                 2586   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__init__.py                               449    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\leagues.cpython-313.pyc       3273   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\loader.cpython-313.pyc        5882   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\market_types.cpython-313.pyc  4607   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\metadata.cpython-313.pyc      736    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\models.cpython-313.pyc        2029   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\sports.cpython-313.pyc        1514   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\registry\__pycache__\__init__.cpython-313.pyc      554    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\category_detector.cpython-313.pyc      2632   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\classifier.cpython-313.pyc             1683   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\confidence.cpython-313.pyc             2153   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\league_detector.cpython-313.pyc        5245   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\league_tests.cpython-313.pyc           2615   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\market_type_tests.cpython-313.pyc      3862   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\matching_engine.cpython-313.pyc        4216   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\models.cpython-313.pyc                 1244   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\parser.cpython-313.pyc                 1869   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\registry_plugin_tests.cpython-313.pyc  3763   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\registry_tests.cpython-313.pyc         3587   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\registry_version_tests.cpython-313.pyc 2272   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\sport_detector.cpython-313.pyc         2844   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\taxonomy.cpython-313.pyc               566    2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\tests.cpython-313.pyc                  2064   2026-07-...
+C:\Users\mitch\OneDrive\Desktop\Polymarket Intelligence Platform\src\classification_v2\__pycache__\__init__.cpython-313.pyc               250    2026-07-...
+
+
+
+
+====================================================================================================
+CURRENT REGRESSION TEST OUTPUT
+====================================================================================================
+Registry + matching engine tests passed: 16
+Registry plugin-loader tests passed: 15
+Market type registry tests passed: 26
+Versioned registry foundation tests passed: 9
+

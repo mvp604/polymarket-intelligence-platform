@@ -1,0 +1,39 @@
+﻿{
+  "version": 1,
+  "health": {
+    "minimum_free_disk_gb": 1.0
+  },
+  "execution": {
+    "stop_on_required_failure": true,
+    "run_when_health_fails": false
+  },
+  "pipeline": [
+    {
+      "order": 10,
+      "name": "Decision Intelligence Dashboard",
+      "runner": "run_decision_intelligence_dashboard.ps1",
+      "latest_report": "reports/decision_intelligence_dashboard/latest.html",
+      "enabled": true,
+      "required": true,
+      "timeout_seconds": 900
+    },
+    {
+      "order": 20,
+      "name": "Decision Audit",
+      "runner": "run_decision_audit.ps1",
+      "latest_report": "reports/decision_audit/latest.html",
+      "enabled": true,
+      "required": true,
+      "timeout_seconds": 900
+    },
+    {
+      "order": 30,
+      "name": "Threshold Optimizer",
+      "runner": "run_threshold_optimizer.ps1",
+      "latest_report": "reports/threshold_optimizer/latest.html",
+      "enabled": true,
+      "required": false,
+      "timeout_seconds": 900
+    }
+  ]
+}

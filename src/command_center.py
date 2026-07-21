@@ -7,6 +7,9 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from platform_controls import render_platform_controls
+from platform_health import render_platform_health
+
 
 DATABASE_PATH = Path("database/polymarket.db")
 REPORTS_PATH = Path("reports")
@@ -204,15 +207,17 @@ def load_top_wallets(limit: int = 5) -> pd.DataFrame:
 def load_backtest_summary() -> dict[str, Any]:
     """Load a compact summary of stored backtest records."""
 
+    empty_summary = {
+        "total": 0,
+        "pending": 0,
+        "wins": 0,
+        "losses": 0,
+        "market_not_found": 0,
+        "profit": 0.0,
+    }
+
     if not table_exists("backtest_results"):
-        return {
-            "total": 0,
-            "pending": 0,
-            "wins": 0,
-            "losses": 0,
-            "market_not_found": 0,
-            "profit": 0.0,
-        }
+        return empty_summary
 
     frame = safe_query(
         """
@@ -224,14 +229,7 @@ def load_backtest_summary() -> dict[str, Any]:
     )
 
     if frame.empty:
-        return {
-            "total": 0,
-            "pending": 0,
-            "wins": 0,
-            "losses": 0,
-            "market_not_found": 0,
-            "profit": 0.0,
-        }
+        return empty_summary
 
     return {
         "total": len(frame),
@@ -245,10 +243,15 @@ def load_backtest_summary() -> dict[str, Any]:
             (frame["result_status"] == "LOSS").sum()
         ),
         "market_not_found": int(
-            (frame["result_status"] == "MARKET_NOT_FOUND").sum()
+            (
+                frame["result_status"]
+                == "MARKET_NOT_FOUND"
+            ).sum()
         ),
         "profit": safe_float(
-            frame["hypothetical_profit"].fillna(0).sum()
+            frame["hypothetical_profit"]
+            .fillna(0)
+            .sum()
         ),
     }
 
@@ -278,7 +281,7 @@ def find_latest_report() -> Path | None:
 
 
 def load_latest_report() -> tuple[str, str]:
-    """Return the newest report filename and report text."""
+    """Return the newest report filename and text."""
 
     report_path = find_latest_report()
 
@@ -344,20 +347,27 @@ def display_summary_metrics(
     if not signals.empty:
         elite_signals = int(
             (
-                signals["conviction_score"] >= 85
+                signals["conviction_score"]
+                >= 85
             ).sum()
         )
 
-    critical_alerts = 0
+    high_alerts = 0
 
     if not alerts.empty:
-        critical_alerts = int(
+        high_alerts = int(
             alerts["severity"]
             .isin(["CRITICAL", "HIGH"])
             .sum()
         )
 
-    column_1, column_2, column_3, column_4, column_5 = st.columns(5)
+    (
+        column_1,
+        column_2,
+        column_3,
+        column_4,
+        column_5,
+    ) = st.columns(5)
 
     column_1.metric(
         "Top Signals",
@@ -376,7 +386,7 @@ def display_summary_metrics(
 
     column_4.metric(
         "High Alerts",
-        critical_alerts,
+        high_alerts,
     )
 
     column_5.metric(
@@ -393,7 +403,7 @@ def display_top_signals(signals: pd.DataFrame) -> None:
     if signals.empty:
         st.info(
             "No consensus signals are stored yet. "
-            "Run the conviction engine first."
+            "Run the full platform first."
         )
         return
 
@@ -417,10 +427,16 @@ def display_top_signals(signals: pd.DataFrame) -> None:
         with st.container(border=True):
             st.markdown(
                 f"### {position}. "
-                f"{signal['title']} — {signal['outcome']}"
+                f"{signal['title']} — "
+                f"{signal['outcome']}"
             )
 
-            metric_1, metric_2, metric_3, metric_4 = st.columns(4)
+            (
+                metric_1,
+                metric_2,
+                metric_3,
+                metric_4,
+            ) = st.columns(4)
 
             metric_1.metric(
                 "Conviction",
@@ -429,7 +445,9 @@ def display_top_signals(signals: pd.DataFrame) -> None:
 
             metric_2.metric(
                 "Wallets",
-                safe_int(signal["wallet_count"]),
+                safe_int(
+                    signal["wallet_count"]
+                ),
             )
 
             metric_3.metric(
@@ -460,7 +478,8 @@ def display_top_signals(signals: pd.DataFrame) -> None:
                 st.caption(label)
 
             st.caption(
-                f"Grade: {signal['conviction_grade']} · "
+                f"Grade: "
+                f"{signal['conviction_grade']} · "
                 f"Average entry: "
                 f"{safe_float(signal['average_entry_price']):.3f} · "
                 f"Current price: "
@@ -468,7 +487,9 @@ def display_top_signals(signals: pd.DataFrame) -> None:
             )
 
 
-def display_recent_alerts(alerts: pd.DataFrame) -> None:
+def display_recent_alerts(
+    alerts: pd.DataFrame,
+) -> None:
     """Display the newest stored alerts."""
 
     st.subheader("Latest Alerts")
@@ -476,7 +497,7 @@ def display_recent_alerts(alerts: pd.DataFrame) -> None:
     if alerts.empty:
         st.info(
             "No alerts are stored yet. "
-            "Run the alert engine first."
+            "Run the full platform first."
         )
         return
 
@@ -519,7 +540,9 @@ def display_recent_alerts(alerts: pd.DataFrame) -> None:
             )
 
 
-def display_top_wallets(wallets: pd.DataFrame) -> None:
+def display_top_wallets(
+    wallets: pd.DataFrame,
+) -> None:
     """Display the highest-rated tracked wallets."""
 
     st.subheader("Top Wallets")
@@ -573,7 +596,7 @@ def display_ai_report() -> None:
     if not report_text:
         st.info(
             "No AI report was found in the reports folder. "
-            "Run ai_research_engine.py first."
+            "Use the Generate AI Report button above."
         )
         return
 
@@ -611,7 +634,8 @@ def display_backtest_status(
 
     st.caption(
         f"Total records: {backtests['total']} · "
-        f"Markets not found: {backtests['market_not_found']} · "
+        f"Markets not found: "
+        f"{backtests['market_not_found']} · "
         f"Hypothetical resolved profit: "
         f"{format_money(backtests['profit'])}"
     )
@@ -626,6 +650,10 @@ def render_command_center() -> None:
         "Executive briefing for smart-money consensus, "
         "wallet quality, alerts and historical evaluation."
     )
+
+    render_platform_controls()
+
+    st.divider()
 
     signals = load_top_signals(limit=5)
     alerts = load_recent_alerts(limit=5)
@@ -666,3 +694,7 @@ def render_command_center() -> None:
 
     with backtest_column:
         display_backtest_status(backtests)
+
+    st.divider()
+
+    render_platform_health()

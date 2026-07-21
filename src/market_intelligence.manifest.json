@@ -1,0 +1,13 @@
+﻿{
+  "id": "market_intelligence",
+  "name": "Market Intelligence",
+  "version": "1.0.0",
+  "runner": "run_market_intelligence.ps1",
+  "enabled": true,
+  "required": true,
+  "stage": "intelligence",
+  "order": 50,
+  "dependencies": [],
+  "latest_report": "reports/market_intelligence/latest.html",
+  "timeout_seconds": 900
+}

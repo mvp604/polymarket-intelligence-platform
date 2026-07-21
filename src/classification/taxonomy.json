@@ -1,0 +1,42 @@
+﻿{
+  "version": "1.0.0",
+  "primary_categories": [
+    "Sports",
+    "Politics",
+    "Crypto",
+    "Economics",
+    "Finance",
+    "Technology",
+    "Entertainment",
+    "World Events",
+    "Science",
+    "Other"
+  ],
+  "sports": [
+    "Soccer",
+    "Basketball",
+    "Baseball",
+    "American Football",
+    "MMA",
+    "Tennis",
+    "Ice Hockey",
+    "Golf",
+    "Motorsport",
+    "Cricket",
+    "Boxing",
+    "Esports"
+  ],
+  "market_types": [
+    "Moneyline",
+    "Spread",
+    "Total",
+    "Player Prop",
+    "Both Teams To Score",
+    "Exact Score",
+    "Outright/Future",
+    "Margin of Victory",
+    "Resolution Event",
+    "Yes/No",
+    "Unclassified"
+  ]
+}

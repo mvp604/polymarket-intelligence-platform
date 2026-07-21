@@ -1,0 +1,2111 @@
+#!/usr/bin/env python3
+"""
+Polymarket Intelligence Platform
+Institutional Decision Engine v2.0
+
+Converts market opportunities into explainable decisions:
+
+BUY
+WATCH
+WAIT
+PASS
+AVOID
+
+Default mode is DRY RUN.
+Use --apply to persist current decisions and historical snapshots.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sqlite3
+import sys
+import time
+import uuid
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Mapping
+
+try:
+    from src.decision_engine_config import (
+        CONFIG_VERSION,
+        DecisionThresholds,
+        get_scoring_profile,
+        thresholds_as_dict,
+    )
+except ModuleNotFoundError:
+    from decision_engine_config import (
+        CONFIG_VERSION,
+        DecisionThresholds,
+        get_scoring_profile,
+        thresholds_as_dict,
+    )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATABASE_PATH = PROJECT_ROOT / "database" / "polymarket.db"
+
+METHODOLOGY_VERSION = CONFIG_VERSION
+
+MASTER_TABLE = "master_opportunities"
+CONSENSUS_TABLE = "institutional_consensus"
+TRUST_TABLE = "wallet_trust_profiles"
+CANONICAL_TABLE = "canonical_market_identities"
+
+DECISION_TABLE = "institutional_decisions_v2"
+HISTORY_TABLE = "institutional_decision_history_v2"
+RUNS_TABLE = "institutional_decision_runs_v2"
+
+DEFAULT_OPPORTUNITY_LIMIT = 250
+DEFAULT_DISPLAY_LIMIT = 25
+DEFAULT_MIN_MASTER_SCORE = 0.0
+DEFAULT_MIN_DATA_COMPLETENESS = 25.0
+
+WEIGHTS = {
+    "master": 0.24,
+    "consensus": 0.16,
+    "wallet": 0.12,
+    "trust": 0.12,
+    "entry": 0.14,
+    "structure": 0.08,
+    "evolution": 0.07,
+    "timing": 0.04,
+    "data": 0.03,
+}
+
+ACTION_PRIORITY = {
+    "BUY": 5,
+    "WATCH": 4,
+    "WAIT": 3,
+    "PASS": 2,
+    "AVOID": 1,
+}
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso_now() -> str:
+    return utc_now().isoformat(timespec="seconds")
+
+
+def configure_utf8() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+
+
+def clamp(
+    value: float,
+    minimum: float = 0.0,
+    maximum: float = 100.0,
+) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def safe_float(
+    value: Any,
+    default: float = 0.0,
+) -> float:
+    try:
+        number = float(value)
+
+        if math.isfinite(number):
+            return number
+
+    except (TypeError, ValueError):
+        pass
+
+    return default
+
+
+def safe_int(
+    value: Any,
+    default: int = 0,
+) -> int:
+    try:
+        return int(value)
+
+    except (TypeError, ValueError):
+        return default
+
+
+def clean_text(
+    value: Any,
+    default: str = "",
+) -> str:
+    if value is None:
+        return default
+
+    return str(value).strip()
+
+
+def row_value(
+    row: Mapping[str, Any],
+    *names: str,
+    default: Any = None,
+) -> Any:
+    for name in names:
+        if name in row and row[name] is not None:
+            return row[name]
+
+    return default
+
+
+def normalize_percentage(value: Any) -> float:
+    number = safe_float(value)
+
+    if abs(number) <= 1.0:
+        number *= 100.0
+
+    return clamp(number)
+
+
+def parse_json(
+    value: Any,
+    fallback: Any,
+) -> Any:
+    if isinstance(value, (list, dict)):
+        return value
+
+    raw = clean_text(value)
+
+    if not raw:
+        return fallback
+
+    try:
+        return json.loads(raw)
+
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback
+
+
+def dump_json(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def grade_for_score(
+    score: float,
+    confidence: float,
+) -> str:
+    if score >= 90 and confidence >= 75:
+        return "S+"
+
+    if score >= 84 and confidence >= 65:
+        return "S"
+
+    if score >= 78 and confidence >= 55:
+        return "A+"
+
+    if score >= 71:
+        return "A"
+
+    if score >= 63:
+        return "B+"
+
+    if score >= 54:
+        return "B"
+
+    if score >= 45:
+        return "C"
+
+    return "D"
+
+
+def confidence_grade(score: float) -> str:
+    if score >= 85:
+        return "VERY HIGH"
+
+    if score >= 70:
+        return "HIGH"
+
+    if score >= 50:
+        return "MEDIUM"
+
+    if score >= 30:
+        return "LOW"
+
+    return "VERY LOW"
+
+
+def connect() -> sqlite3.Connection:
+    if not DATABASE_PATH.exists():
+        raise FileNotFoundError(
+            f"Database not found: {DATABASE_PATH}"
+        )
+
+    connection = sqlite3.connect(
+        DATABASE_PATH,
+        timeout=60,
+    )
+
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA busy_timeout = 60000")
+
+    return connection
+
+
+def table_exists(
+    connection: sqlite3.Connection,
+    table_name: str,
+) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = ?
+        """,
+        (table_name,),
+    ).fetchone()
+
+    return row is not None
+
+
+def table_columns(
+    connection: sqlite3.Connection,
+    table_name: str,
+) -> set[str]:
+    if not table_exists(connection, table_name):
+        return set()
+
+    return {
+        clean_text(row["name"])
+        for row in connection.execute(
+            f'PRAGMA table_info("{table_name}")'
+        )
+    }
+
+
+def table_count(
+    connection: sqlite3.Connection,
+    table_name: str,
+) -> int:
+    if not table_exists(connection, table_name):
+        return 0
+
+    row = connection.execute(
+        f'SELECT COUNT(*) AS total FROM "{table_name}"'
+    ).fetchone()
+
+    return safe_int(row["total"] if row else 0)
+
+
+def create_tables() -> None:
+    connection = connect()
+
+    try:
+        connection.executescript(
+            f"""
+            CREATE TABLE IF NOT EXISTS {DECISION_TABLE} (
+                opportunity_key TEXT PRIMARY KEY,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                market_type TEXT,
+
+                decision_score REAL NOT NULL DEFAULT 0,
+                decision_grade TEXT NOT NULL DEFAULT 'D',
+                decision_action TEXT NOT NULL DEFAULT 'PASS',
+                actionability_score REAL NOT NULL DEFAULT 0,
+
+                confidence REAL NOT NULL DEFAULT 0,
+                confidence_grade TEXT NOT NULL DEFAULT 'VERY LOW',
+
+                master_quality_score REAL NOT NULL DEFAULT 0,
+                consensus_quality_score REAL NOT NULL DEFAULT 0,
+                wallet_quality_score REAL NOT NULL DEFAULT 0,
+                trust_quality_score REAL NOT NULL DEFAULT 50,
+                entry_quality_score REAL NOT NULL DEFAULT 0,
+                market_structure_score REAL NOT NULL DEFAULT 0,
+                evolution_quality_score REAL NOT NULL DEFAULT 0,
+                timing_quality_score REAL NOT NULL DEFAULT 0,
+                data_quality_score REAL NOT NULL DEFAULT 0,
+
+                wallet_count INTEGER NOT NULL DEFAULT 0,
+                elite_wallet_count INTEGER NOT NULL DEFAULT 0,
+                supporting_wallet_count INTEGER NOT NULL DEFAULT 0,
+                trusted_wallet_count INTEGER NOT NULL DEFAULT 0,
+
+                weighted_trust_score REAL NOT NULL DEFAULT 50,
+                trust_confidence REAL NOT NULL DEFAULT 0,
+                average_consensus_multiplier REAL NOT NULL DEFAULT 1,
+
+                combined_current_value REAL NOT NULL DEFAULT 0,
+
+                chase_risk_score REAL NOT NULL DEFAULT 0,
+                conflict_ratio REAL NOT NULL DEFAULT 0,
+                reversal_score REAL NOT NULL DEFAULT 0,
+                weakening_score REAL NOT NULL DEFAULT 0,
+                edge_remaining_score REAL NOT NULL DEFAULT 0,
+
+                lifecycle_status TEXT,
+                seconds_to_start INTEGER,
+
+                data_completeness_score REAL NOT NULL DEFAULT 0,
+                source_coverage_score REAL NOT NULL DEFAULT 0,
+                data_confidence TEXT NOT NULL DEFAULT 'LOW',
+
+                canonical_match INTEGER NOT NULL DEFAULT 0,
+                is_tradable INTEGER NOT NULL DEFAULT 0,
+                polymarket_url TEXT,
+                liquidity REAL NOT NULL DEFAULT 0,
+                volume REAL NOT NULL DEFAULT 0,
+
+                hard_veto INTEGER NOT NULL DEFAULT 0,
+                veto_reasons_json TEXT,
+                positive_reasons_json TEXT,
+                risk_flags_json TEXT,
+                explanation TEXT NOT NULL,
+
+                calculated_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                methodology_version TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS
+            idx_institutional_decisions_rank
+            ON {DECISION_TABLE} (
+                decision_action,
+                actionability_score DESC,
+                decision_score DESC
+            );
+
+            CREATE TABLE IF NOT EXISTS {HISTORY_TABLE} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+
+                opportunity_key TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+
+                decision_score REAL NOT NULL,
+                decision_grade TEXT NOT NULL,
+                decision_action TEXT NOT NULL,
+                actionability_score REAL NOT NULL,
+
+                confidence REAL NOT NULL,
+                weighted_trust_score REAL NOT NULL,
+                entry_quality_score REAL NOT NULL,
+                market_structure_score REAL NOT NULL,
+                data_quality_score REAL NOT NULL,
+
+                hard_veto INTEGER NOT NULL,
+                veto_reasons_json TEXT,
+                risk_flags_json TEXT,
+
+                observed_at TEXT NOT NULL,
+                methodology_version TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS
+            idx_institutional_decision_history
+            ON {HISTORY_TABLE} (
+                opportunity_key,
+                observed_at DESC
+            );
+
+            CREATE TABLE IF NOT EXISTS {RUNS_TABLE} (
+                run_id TEXT PRIMARY KEY,
+
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+
+                mode TEXT NOT NULL,
+                methodology_version TEXT NOT NULL,
+
+                opportunity_limit INTEGER NOT NULL,
+                minimum_master_score REAL NOT NULL,
+                minimum_data_completeness REAL NOT NULL,
+
+                source_rows_seen INTEGER NOT NULL DEFAULT 0,
+                decisions_analyzed INTEGER NOT NULL DEFAULT 0,
+                decisions_saved INTEGER NOT NULL DEFAULT 0,
+                history_saved INTEGER NOT NULL DEFAULT 0,
+
+                buy_count INTEGER NOT NULL DEFAULT 0,
+                watch_count INTEGER NOT NULL DEFAULT 0,
+                wait_count INTEGER NOT NULL DEFAULT 0,
+                pass_count INTEGER NOT NULL DEFAULT 0,
+                avoid_count INTEGER NOT NULL DEFAULT 0,
+                veto_count INTEGER NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL,
+                duration_seconds REAL NOT NULL DEFAULT 0,
+                error_message TEXT
+            );
+            """
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+
+def validate_sources() -> dict[str, int]:
+    connection = connect()
+
+    try:
+        if not table_exists(connection, MASTER_TABLE):
+            raise RuntimeError(
+                f"{MASTER_TABLE} is missing. "
+                "Run master_opportunity_engine.py first."
+            )
+
+        required = {
+            "opportunity_key",
+            "market_id",
+            "title",
+            "outcome",
+            "master_score",
+        }
+
+        missing = required - table_columns(
+            connection,
+            MASTER_TABLE,
+        )
+
+        if missing:
+            raise RuntimeError(
+                f"{MASTER_TABLE} is missing columns: "
+                + ", ".join(sorted(missing))
+            )
+
+        counts = {
+            MASTER_TABLE: table_count(
+                connection,
+                MASTER_TABLE,
+            ),
+            CONSENSUS_TABLE: table_count(
+                connection,
+                CONSENSUS_TABLE,
+            ),
+            TRUST_TABLE: table_count(
+                connection,
+                TRUST_TABLE,
+            ),
+            CANONICAL_TABLE: table_count(
+                connection,
+                CANONICAL_TABLE,
+            ),
+        }
+
+        if counts[MASTER_TABLE] <= 0:
+            raise RuntimeError(
+                f"{MASTER_TABLE} contains no opportunities."
+            )
+
+        return counts
+
+    finally:
+        connection.close()
+
+
+def load_rows(
+    table_name: str,
+) -> list[dict[str, Any]]:
+    connection = connect()
+
+    try:
+        if not table_exists(connection, table_name):
+            return []
+
+        rows = connection.execute(
+            f'SELECT * FROM "{table_name}"'
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        connection.close()
+
+
+def load_master_rows(
+    limit: int,
+    minimum_score: float,
+) -> list[dict[str, Any]]:
+    connection = connect()
+
+    try:
+        rows = connection.execute(
+            f"""
+            SELECT *
+            FROM {MASTER_TABLE}
+            WHERE COALESCE(master_score, 0) >= ?
+            ORDER BY master_score DESC
+            LIMIT ?
+            """,
+            (
+                minimum_score,
+                limit,
+            ),
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        connection.close()
+
+
+def build_lookup(
+    rows: list[dict[str, Any]],
+    key_names: tuple[str, ...],
+) -> dict[str, dict[str, Any]]:
+    output: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        for key_name in key_names:
+            key = clean_text(row.get(key_name))
+
+            if key:
+                output[key] = row
+                break
+
+    return output
+
+
+def extract_wallets(
+    consensus: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not consensus:
+        return []
+
+    parsed = parse_json(
+        row_value(
+            consensus,
+            "wallets_json",
+            "supporting_wallets_json",
+            default=[],
+        ),
+        [],
+    )
+
+    if isinstance(parsed, dict):
+        parsed = (
+            parsed.get("wallets")
+            or parsed.get("supporting_wallets")
+            or parsed.get("items")
+            or []
+        )
+
+    if not isinstance(parsed, list):
+        return []
+
+    wallets: list[dict[str, Any]] = []
+
+    for item in parsed:
+        if isinstance(item, str):
+            wallet = item.lower().strip()
+            weight = 1.0
+
+        elif isinstance(item, dict):
+            wallet = clean_text(
+                row_value(
+                    item,
+                    "wallet",
+                    "address",
+                    "proxy_wallet",
+                )
+            ).lower()
+
+            weight = max(
+                safe_float(
+                    row_value(
+                        item,
+                        "current_value",
+                        "weighted_value",
+                        "position_value",
+                        "value",
+                        "size",
+                        default=1,
+                    ),
+                    1,
+                ),
+                0.0001,
+            )
+
+        else:
+            continue
+
+        if wallet:
+            wallets.append(
+                {
+                    "wallet": wallet,
+                    "weight": weight,
+                }
+            )
+
+    return wallets
+
+
+def trust_evidence(
+    consensus: Mapping[str, Any] | None,
+    trust_lookup: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    wallets = extract_wallets(consensus)
+
+    matched: list[tuple[Mapping[str, Any], float]] = []
+
+    for wallet in wallets:
+        profile = trust_lookup.get(
+            wallet["wallet"]
+        )
+
+        if profile:
+            matched.append(
+                (
+                    profile,
+                    wallet["weight"],
+                )
+            )
+
+    if not matched:
+        return {
+            "supporting": len(wallets),
+            "trusted": 0,
+            "trust": 50.0,
+            "confidence": 0.0,
+            "multiplier": 1.0,
+        }
+
+    total_weight = sum(weight for _, weight in matched)
+
+    weighted_trust = sum(
+        safe_float(profile.get("trust_score"), 50)
+        * weight
+        for profile, weight in matched
+    ) / total_weight
+
+    weighted_confidence = sum(
+        safe_float(profile.get("confidence"))
+        * weight
+        for profile, weight in matched
+    ) / total_weight
+
+    weighted_multiplier = sum(
+        safe_float(
+            profile.get("consensus_multiplier"),
+            1,
+        )
+        * weight
+        for profile, weight in matched
+    ) / total_weight
+
+    return {
+        "supporting": len(wallets),
+        "trusted": len(matched),
+        "trust": clamp(weighted_trust),
+        "confidence": clamp(weighted_confidence),
+        "multiplier": max(
+            0.55,
+            min(weighted_multiplier, 1.50),
+        ),
+    }
+
+
+def score_entry(master: Mapping[str, Any]) -> float:
+    edge = safe_float(
+        master.get("edge_remaining_score"),
+        50,
+    )
+    clv = safe_float(
+        master.get("clv_score"),
+        50,
+    )
+    chase = safe_float(
+        master.get("chase_risk_score"),
+        50,
+    )
+    upside = safe_float(
+        master.get("remaining_upside")
+    )
+
+    if abs(upside) <= 1:
+        upside *= 100
+
+    return clamp(
+        edge * 0.40
+        + clv * 0.20
+        + (100 - chase) * 0.30
+        + clamp(upside) * 0.10
+    )
+
+
+def score_structure(
+    master: Mapping[str, Any],
+    canonical: Mapping[str, Any] | None,
+) -> float:
+    conflict = normalize_percentage(
+        master.get("conflict_ratio")
+    )
+    reversal = safe_float(
+        master.get("reversal_score")
+    )
+    volatility = safe_float(
+        master.get("volatility_score")
+    )
+    independence = safe_float(
+        master.get("portfolio_independence_score"),
+        50,
+    )
+
+    liquidity = safe_float(
+        row_value(
+            canonical or {},
+            "liquidity",
+            default=0,
+        )
+    )
+    volume = safe_float(
+        row_value(
+            canonical or {},
+            "volume",
+            default=0,
+        )
+    )
+
+    if canonical:
+        liquidity_score = clamp(
+            math.log10(max(liquidity, 1)) * 16
+        )
+        volume_score = clamp(
+            math.log10(max(volume, 1)) * 12
+        )
+        market_depth = (
+            liquidity_score * 0.65
+            + volume_score * 0.35
+        )
+
+    else:
+        market_depth = 50
+
+    return clamp(
+        (100 - conflict) * 0.25
+        + (100 - reversal) * 0.20
+        + (100 - volatility) * 0.15
+        + independence * 0.20
+        + market_depth * 0.20
+    )
+
+
+def score_evolution(
+    master: Mapping[str, Any],
+) -> float:
+    evolution = safe_float(
+        master.get("evolution_score"),
+        50,
+    )
+    strengthening = safe_float(
+        master.get("strengthening_score"),
+        50,
+    )
+    weakening = safe_float(
+        master.get("weakening_score")
+    )
+
+    return clamp(
+        evolution * 0.50
+        + strengthening * 0.35
+        + (100 - weakening) * 0.15
+    )
+
+
+def build_vetoes(
+    master: Mapping[str, Any],
+    canonical: Mapping[str, Any] | None,
+    minimum_data_completeness: float,
+) -> list[str]:
+    vetoes: list[str] = []
+
+    lifecycle = clean_text(
+        master.get("lifecycle_status")
+    ).upper()
+
+    if lifecycle in {
+        "LIVE",
+        "CLOSED",
+        "RESOLVED",
+        "ARCHIVED",
+        "INACTIVE",
+        "EXPIRED",
+    }:
+        vetoes.append(
+            f"NON_ACTIONABLE_LIFECYCLE:{lifecycle}"
+        )
+
+    if safe_float(
+        master.get("chase_risk_score")
+    ) >= 82:
+        vetoes.append("EXTREME_CHASE_RISK")
+
+    if normalize_percentage(
+        master.get("conflict_ratio")
+    ) >= 65:
+        vetoes.append("SEVERE_SMART_MONEY_CONFLICT")
+
+    if safe_float(
+        master.get("reversal_score")
+    ) >= 75:
+        vetoes.append("SEVERE_PRICE_REVERSAL")
+
+    if safe_float(
+        master.get("weakening_score")
+    ) >= 80:
+        vetoes.append("SEVERE_SIGNAL_WEAKENING")
+
+    if safe_float(
+        master.get("data_completeness_score")
+    ) < minimum_data_completeness:
+        vetoes.append("INSUFFICIENT_DATA_COMPLETENESS")
+
+    if canonical:
+        tradable = safe_int(
+            row_value(
+                canonical,
+                "is_tradable",
+                "tradable",
+                default=1,
+            ),
+            1,
+        )
+
+        accepting_orders = safe_int(
+            row_value(
+                canonical,
+                "accepting_orders",
+                default=1,
+            ),
+            1,
+        )
+
+        active = safe_int(
+            row_value(
+                canonical,
+                "active",
+                default=1,
+            ),
+            1,
+        )
+
+        closed = safe_int(
+            row_value(
+                canonical,
+                "closed",
+                default=0,
+            )
+        )
+
+        if (
+            not tradable
+            or not accepting_orders
+            or not active
+            or closed
+        ):
+            vetoes.append(
+                "CANONICAL_MARKET_NOT_TRADABLE"
+            )
+
+    return sorted(set(vetoes))
+
+
+@dataclass
+class Decision:
+    opportunity_key: str
+    market_id: str
+    title: str
+    outcome: str
+    market_type: str | None
+
+    decision_score: float
+    decision_grade: str
+    decision_action: str
+    actionability_score: float
+
+    confidence: float
+    confidence_grade: str
+
+    master_quality_score: float
+    consensus_quality_score: float
+    wallet_quality_score: float
+    trust_quality_score: float
+    entry_quality_score: float
+    market_structure_score: float
+    evolution_quality_score: float
+    timing_quality_score: float
+    data_quality_score: float
+
+    wallet_count: int
+    elite_wallet_count: int
+    supporting_wallet_count: int
+    trusted_wallet_count: int
+
+    weighted_trust_score: float
+    trust_confidence: float
+    average_consensus_multiplier: float
+
+    combined_current_value: float
+
+    chase_risk_score: float
+    conflict_ratio: float
+    reversal_score: float
+    weakening_score: float
+    edge_remaining_score: float
+
+    lifecycle_status: str | None
+    seconds_to_start: int | None
+
+    data_completeness_score: float
+    source_coverage_score: float
+    data_confidence: str
+
+    canonical_match: int
+    is_tradable: int
+    polymarket_url: str | None
+    liquidity: float
+    volume: float
+
+    hard_veto: int
+    veto_reasons_json: str
+    positive_reasons_json: str
+    risk_flags_json: str
+    explanation: str
+
+    calculated_at: str
+    updated_at: str
+    methodology_version: str
+
+
+def choose_action(
+    score: float,
+    actionability: float,
+    confidence: float,
+    vetoes: list[str],
+    entry: float,
+    structure: float,
+    trust: float,
+    wallet_count: int,
+    data_quality: float,
+    thresholds: DecisionThresholds,
+) -> str:
+    severe = any(
+        item.startswith(
+            (
+                "NON_ACTIONABLE_LIFECYCLE",
+                "CANONICAL_MARKET_NOT_TRADABLE",
+            )
+        )
+        for item in vetoes
+    )
+
+    if severe:
+        return "AVOID"
+
+    if vetoes:
+        if (
+            score >= thresholds.watch_score
+            and confidence >= thresholds.wait_confidence
+        ):
+            return "WAIT"
+
+        return "PASS"
+
+    if (
+        score >= thresholds.buy_score
+        and actionability >= thresholds.buy_actionability
+        and confidence >= thresholds.buy_confidence
+        and entry >= thresholds.buy_entry
+        and structure >= thresholds.buy_structure
+        and trust >= thresholds.buy_trust
+        and wallet_count >= thresholds.buy_wallet_count
+        and data_quality >= thresholds.buy_data_quality
+    ):
+        return "BUY"
+
+    if (
+        score >= thresholds.watch_score
+        and actionability >= thresholds.watch_actionability
+        and confidence >= thresholds.watch_confidence
+    ):
+        return "WATCH"
+
+    if (
+        score >= thresholds.wait_score
+        and confidence >= thresholds.wait_confidence
+        and entry < thresholds.wait_entry_ceiling
+    ):
+        return "WAIT"
+
+    if score < thresholds.avoid_score:
+        return "AVOID"
+
+    return "PASS"
+
+
+def build_decision(
+    master: Mapping[str, Any],
+    consensus: Mapping[str, Any] | None,
+    trust_lookup: Mapping[str, Mapping[str, Any]],
+    canonical: Mapping[str, Any] | None,
+    minimum_data_completeness: float,
+) -> Decision:
+    trust = trust_evidence(
+        consensus,
+        trust_lookup,
+    )
+
+    title = clean_text(
+        master.get("title")
+    )
+
+    market_type = (
+        clean_text(
+            master.get("market_type")
+        )
+        or None
+    )
+
+    scoring_profile = get_scoring_profile(
+        market_type,
+        title,
+    )
+
+    profile_weights = scoring_profile.weights
+    thresholds = scoring_profile.thresholds
+    threshold_snapshot = thresholds_as_dict(
+        thresholds
+    )
+
+    master_score = clamp(
+        safe_float(master.get("master_score"))
+    )
+
+    consensus_score = clamp(
+        safe_float(
+            row_value(
+                consensus or {},
+                "consensus_strength",
+                default=master.get(
+                    "consensus_strength",
+                    master.get(
+                        "institutional_score",
+                        0,
+                    ),
+                ),
+            )
+        )
+    )
+
+    wallet_quality = clamp(
+        safe_float(
+            row_value(
+                consensus or {},
+                "weighted_wallet_quality",
+                default=master.get(
+                    "weighted_wallet_quality",
+                    master.get(
+                        "wallet_quality_score",
+                        0,
+                    ),
+                ),
+            )
+        )
+    )
+
+    entry = score_entry(master)
+    structure = score_structure(
+        master,
+        canonical,
+    )
+    evolution = score_evolution(master)
+
+    timing = clamp(
+        safe_float(
+            master.get("timing_score"),
+            50,
+        )
+    )
+
+    completeness = clamp(
+        safe_float(
+            master.get("data_completeness_score")
+        )
+    )
+    coverage = clamp(
+        safe_float(
+            master.get("source_coverage_score")
+        )
+    )
+    source_count = safe_int(
+        master.get("source_count")
+    )
+
+    canonical_score = 100 if canonical else 25
+
+    trust_coverage = (
+        trust["trusted"]
+        / max(trust["supporting"], 1)
+        * 100
+        if trust["supporting"]
+        else 35
+    )
+
+    data_quality = clamp(
+        completeness * 0.35
+        + coverage * 0.20
+        + clamp(source_count / 7 * 100) * 0.15
+        + trust_coverage * 0.15
+        + canonical_score * 0.15
+    )
+
+    components = {
+        "master": master_score,
+        "consensus": consensus_score,
+        "wallet": wallet_quality,
+        "trust": trust["trust"],
+        "entry": entry,
+        "structure": structure,
+        "evolution": evolution,
+        "timing": timing,
+        "data": data_quality,
+    }
+
+    raw_score = sum(
+        components[key]
+        * profile_weights[key]
+        for key in profile_weights
+    )
+
+    trust_adjustment = (
+        trust["multiplier"] - 1
+    ) * 10
+
+    inherited_penalty = min(
+        safe_float(
+            master.get("total_penalty")
+        ) * 0.12,
+        10,
+    )
+
+    score = clamp(
+        raw_score
+        + trust_adjustment
+        - inherited_penalty
+    )
+
+    wallet_count = safe_int(
+        row_value(
+            consensus or {},
+            "wallet_count",
+            default=master.get("wallet_count", 0),
+        )
+    )
+
+    elite_wallet_count = safe_int(
+        row_value(
+            consensus or {},
+            "elite_wallet_count",
+            default=master.get(
+                "elite_wallet_count",
+                0,
+            ),
+        )
+    )
+
+    confidence = clamp(
+        data_quality * 0.42
+        + trust["confidence"] * 0.23
+        + clamp(wallet_count / 6 * 100) * 0.15
+        + clamp(source_count / 7 * 100) * 0.10
+        + canonical_score * 0.10
+    )
+
+    vetoes = build_vetoes(
+        master,
+        canonical,
+        minimum_data_completeness,
+    )
+
+    actionability = clamp(
+        score * 0.30
+        + confidence * 0.20
+        + entry * 0.25
+        + structure * 0.15
+        + data_quality * 0.10
+        - min(len(vetoes) * 12, 45)
+    )
+
+    action = choose_action(
+        score=score,
+        actionability=actionability,
+        confidence=confidence,
+        vetoes=vetoes,
+        entry=entry,
+        structure=structure,
+        trust=trust["trust"],
+        wallet_count=wallet_count,
+        data_quality=data_quality,
+        thresholds=thresholds,
+    )
+
+    positives: list[str] = []
+    risks: list[str] = []
+
+    if consensus_score >= 75:
+        positives.append("STRONG_CONSENSUS")
+
+    if wallet_quality >= 70:
+        positives.append("HIGH_WALLET_QUALITY")
+
+    if trust["trust"] >= 65:
+        positives.append("TRUSTED_WALLET_SUPPORT")
+
+    if entry >= 70:
+        positives.append("FAVORABLE_ENTRY")
+
+    if evolution >= 70:
+        positives.append("STRENGTHENING_SIGNAL")
+
+    if wallet_count <= 1:
+        risks.append("SINGLE_WALLET_SUPPORT")
+
+    if safe_float(
+        master.get("chase_risk_score")
+    ) >= 65:
+        risks.append("ELEVATED_CHASE_RISK")
+
+    if trust["supporting"] == 0:
+        risks.append(
+            "SUPPORTING_WALLET_DETAILS_UNAVAILABLE"
+        )
+
+    if not canonical:
+        risks.append(
+            "CANONICAL_IDENTITY_NOT_MATCHED"
+        )
+
+    explanation = (
+        f"{action} using the "
+        f"{scoring_profile.name} scoring profile. "
+        f"Decision score {score:.1f}/100 and "
+        f"confidence {confidence:.1f}%. "
+        f"Consensus {consensus_score:.1f}, "
+        f"wallet quality {wallet_quality:.1f}, "
+        f"trust {trust['trust']:.1f}, "
+        f"entry {entry:.1f}, "
+        f"structure {structure:.1f}, "
+        f"evolution {evolution:.1f}, "
+        f"timing {timing:.1f}, "
+        f"data {data_quality:.1f}. "
+        f"Profile thresholds: "
+        f"BUY {threshold_snapshot['buy_score']:.1f}, "
+        f"WATCH {threshold_snapshot['watch_score']:.1f}, "
+        f"WAIT {threshold_snapshot['wait_score']:.1f}, "
+        f"AVOID below "
+        f"{threshold_snapshot['avoid_score']:.1f}. "
+    )
+
+    if vetoes:
+        explanation += (
+            "A BUY classification is blocked by: "
+            + ", ".join(vetoes)
+            + "."
+        )
+
+    else:
+        explanation += "No hard veto is active."
+
+    calculated_at = iso_now()
+
+    return Decision(
+        opportunity_key=clean_text(
+            master.get("opportunity_key")
+        ),
+        market_id=clean_text(
+            master.get("market_id")
+        ),
+        title=title,
+        outcome=clean_text(master.get("outcome")),
+        market_type=market_type,
+
+        decision_score=round(score, 4),
+        decision_grade=grade_for_score(
+            score,
+            confidence,
+        ),
+        decision_action=action,
+        actionability_score=round(
+            actionability,
+            4,
+        ),
+
+        confidence=round(confidence, 4),
+        confidence_grade=confidence_grade(
+            confidence
+        ),
+
+        master_quality_score=round(
+            master_score,
+            4,
+        ),
+        consensus_quality_score=round(
+            consensus_score,
+            4,
+        ),
+        wallet_quality_score=round(
+            wallet_quality,
+            4,
+        ),
+        trust_quality_score=round(
+            trust["trust"],
+            4,
+        ),
+        entry_quality_score=round(entry, 4),
+        market_structure_score=round(
+            structure,
+            4,
+        ),
+        evolution_quality_score=round(
+            evolution,
+            4,
+        ),
+        timing_quality_score=round(
+            timing,
+            4,
+        ),
+        data_quality_score=round(
+            data_quality,
+            4,
+        ),
+
+        wallet_count=wallet_count,
+        elite_wallet_count=elite_wallet_count,
+        supporting_wallet_count=trust[
+            "supporting"
+        ],
+        trusted_wallet_count=trust["trusted"],
+
+        weighted_trust_score=round(
+            trust["trust"],
+            4,
+        ),
+        trust_confidence=round(
+            trust["confidence"],
+            4,
+        ),
+        average_consensus_multiplier=round(
+            trust["multiplier"],
+            4,
+        ),
+
+        combined_current_value=round(
+            safe_float(
+                row_value(
+                    consensus or {},
+                    "total_current_value",
+                    default=master.get(
+                        "combined_current_value",
+                        0,
+                    ),
+                )
+            ),
+            4,
+        ),
+
+        chase_risk_score=round(
+            safe_float(
+                master.get("chase_risk_score")
+            ),
+            4,
+        ),
+        conflict_ratio=round(
+            normalize_percentage(
+                master.get("conflict_ratio")
+            ),
+            4,
+        ),
+        reversal_score=round(
+            safe_float(
+                master.get("reversal_score")
+            ),
+            4,
+        ),
+        weakening_score=round(
+            safe_float(
+                master.get("weakening_score")
+            ),
+            4,
+        ),
+        edge_remaining_score=round(
+            safe_float(
+                master.get("edge_remaining_score")
+            ),
+            4,
+        ),
+
+        lifecycle_status=clean_text(
+            master.get("lifecycle_status")
+        ) or None,
+        seconds_to_start=(
+            safe_int(master.get("seconds_to_start"))
+            if master.get("seconds_to_start")
+            is not None
+            else None
+        ),
+
+        data_completeness_score=round(
+            completeness,
+            4,
+        ),
+        source_coverage_score=round(
+            coverage,
+            4,
+        ),
+        data_confidence=clean_text(
+            master.get("data_confidence"),
+            "LOW",
+        ).upper(),
+
+        canonical_match=int(bool(canonical)),
+        is_tradable=safe_int(
+            row_value(
+                canonical or {},
+                "is_tradable",
+                "tradable",
+                default=0,
+            )
+        ),
+        polymarket_url=clean_text(
+            row_value(
+                canonical or {},
+                "polymarket_url",
+                "url",
+            )
+        ) or None,
+        liquidity=round(
+            safe_float(
+                row_value(
+                    canonical or {},
+                    "liquidity",
+                    default=0,
+                )
+            ),
+            4,
+        ),
+        volume=round(
+            safe_float(
+                row_value(
+                    canonical or {},
+                    "volume",
+                    default=0,
+                )
+            ),
+            4,
+        ),
+
+        hard_veto=int(bool(vetoes)),
+        veto_reasons_json=dump_json(vetoes),
+        positive_reasons_json=dump_json(
+            positives
+        ),
+        risk_flags_json=dump_json(
+            sorted(set(risks))
+        ),
+        explanation=explanation,
+
+        calculated_at=calculated_at,
+        updated_at=calculated_at,
+        methodology_version=(
+            f"{METHODOLOGY_VERSION}:"
+            f"{scoring_profile.name}"
+        ),
+    )
+
+
+def save_decisions(
+    decisions: list[Decision],
+    run_id: str,
+) -> tuple[int, int]:
+    if not decisions:
+        return 0, 0
+
+    columns = list(asdict(decisions[0]).keys())
+
+    names = ", ".join(
+        f'"{column}"'
+        for column in columns
+    )
+
+    placeholders = ", ".join(
+        "?"
+        for _ in columns
+    )
+
+    updates = ", ".join(
+        f'"{column}" = excluded."{column}"'
+        for column in columns
+        if column != "opportunity_key"
+    )
+
+    connection = connect()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+
+        active_keys = [
+            decision.opportunity_key
+            for decision in decisions
+        ]
+
+        key_placeholders = ", ".join(
+            "?"
+            for _ in active_keys
+        )
+
+        connection.execute(
+            f"""
+            DELETE FROM {DECISION_TABLE}
+            WHERE opportunity_key
+            NOT IN ({key_placeholders})
+            """,
+            active_keys,
+        )
+
+        current_query = f"""
+            INSERT INTO {DECISION_TABLE} (
+                {names}
+            )
+            VALUES (
+                {placeholders}
+            )
+            ON CONFLICT(opportunity_key)
+            DO UPDATE SET
+                {updates}
+        """
+
+        history_query = f"""
+            INSERT INTO {HISTORY_TABLE} (
+                run_id,
+                opportunity_key,
+                market_id,
+                title,
+                outcome,
+                decision_score,
+                decision_grade,
+                decision_action,
+                actionability_score,
+                confidence,
+                weighted_trust_score,
+                entry_quality_score,
+                market_structure_score,
+                data_quality_score,
+                hard_veto,
+                veto_reasons_json,
+                risk_flags_json,
+                observed_at,
+                methodology_version
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        """
+
+        observed_at = iso_now()
+
+        for decision in decisions:
+            payload = asdict(decision)
+
+            connection.execute(
+                current_query,
+                tuple(
+                    payload[column]
+                    for column in columns
+                ),
+            )
+
+            connection.execute(
+                history_query,
+                (
+                    run_id,
+                    decision.opportunity_key,
+                    decision.market_id,
+                    decision.title,
+                    decision.outcome,
+                    decision.decision_score,
+                    decision.decision_grade,
+                    decision.decision_action,
+                    decision.actionability_score,
+                    decision.confidence,
+                    decision.weighted_trust_score,
+                    decision.entry_quality_score,
+                    decision.market_structure_score,
+                    decision.data_quality_score,
+                    decision.hard_veto,
+                    decision.veto_reasons_json,
+                    decision.risk_flags_json,
+                    observed_at,
+                    METHODOLOGY_VERSION,
+                ),
+            )
+
+        connection.commit()
+
+        return len(decisions), len(decisions)
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
+def display_board(
+    decisions: list[Decision],
+    display_limit: int,
+) -> None:
+    print()
+    print("INSTITUTIONAL DECISION BOARD")
+    print("-" * 120)
+
+    for index, decision in enumerate(
+        decisions[:display_limit],
+        start=1,
+    ):
+        print(
+            f"{index:>3}. "
+            f"{decision.decision_action:<5} "
+            f"{decision.decision_grade:<3} "
+            f"score={decision.decision_score:>6.2f} "
+            f"actionability="
+            f"{decision.actionability_score:>6.2f} "
+            f"confidence={decision.confidence:>6.2f}%"
+        )
+
+        print(
+            f"     {decision.title} "
+            f"— {decision.outcome}"
+        )
+
+        print(
+            "     consensus/wallet/trust/entry/structure="
+            f"{decision.consensus_quality_score:.1f}/"
+            f"{decision.wallet_quality_score:.1f}/"
+            f"{decision.trust_quality_score:.1f}/"
+            f"{decision.entry_quality_score:.1f}/"
+            f"{decision.market_structure_score:.1f}"
+        )
+
+        print(
+            "     wallets="
+            f"{decision.wallet_count} "
+            f"(elite {decision.elite_wallet_count}, "
+            f"trusted "
+            f"{decision.trusted_wallet_count}/"
+            f"{decision.supporting_wallet_count})"
+        )
+
+        vetoes = parse_json(
+            decision.veto_reasons_json,
+            [],
+        )
+
+        if vetoes:
+            print(
+                "     VETO: "
+                + ", ".join(vetoes)
+            )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build institutional market decisions from "
+            "master opportunity, consensus, wallet trust "
+            "and canonical-market intelligence."
+        )
+    )
+
+    parser.add_argument(
+        "--opportunity-limit",
+        type=int,
+        default=DEFAULT_OPPORTUNITY_LIMIT,
+    )
+
+    parser.add_argument(
+        "--display-limit",
+        type=int,
+        default=DEFAULT_DISPLAY_LIMIT,
+    )
+
+    parser.add_argument(
+        "--min-master-score",
+        type=float,
+        default=DEFAULT_MIN_MASTER_SCORE,
+    )
+
+    parser.add_argument(
+        "--min-data-completeness",
+        type=float,
+        default=DEFAULT_MIN_DATA_COMPLETENESS,
+    )
+
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+    )
+
+    return parser.parse_args()
+
+
+def main() -> None:
+    configure_utf8()
+
+    args = parse_args()
+
+    args.opportunity_limit = max(
+        args.opportunity_limit,
+        1,
+    )
+
+    args.display_limit = max(
+        args.display_limit,
+        1,
+    )
+
+    args.min_master_score = clamp(
+        args.min_master_score
+    )
+
+    args.min_data_completeness = clamp(
+        args.min_data_completeness
+    )
+
+    mode = (
+        "APPLY"
+        if args.apply
+        else "DRY RUN"
+    )
+
+    started = utc_now()
+    run_id = uuid.uuid4().hex
+
+    create_tables()
+    counts = validate_sources()
+
+    connection = connect()
+
+    try:
+        connection.execute(
+            f"""
+            INSERT INTO {RUNS_TABLE} (
+                run_id,
+                started_at,
+                mode,
+                methodology_version,
+                opportunity_limit,
+                minimum_master_score,
+                minimum_data_completeness,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING')
+            """,
+            (
+                run_id,
+                started.isoformat(timespec="seconds"),
+                mode,
+                METHODOLOGY_VERSION,
+                args.opportunity_limit,
+                args.min_master_score,
+                args.min_data_completeness,
+            ),
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+    decisions: list[Decision] = []
+    saved = 0
+    history_saved = 0
+
+    try:
+        master_rows = load_master_rows(
+            args.opportunity_limit,
+            args.min_master_score,
+        )
+
+        consensus_lookup = build_lookup(
+            load_rows(CONSENSUS_TABLE),
+            (
+                "consensus_key",
+                "opportunity_key",
+                "market_id",
+            ),
+        )
+
+        trust_lookup = {
+            clean_text(row.get("wallet")).lower(): row
+            for row in load_rows(TRUST_TABLE)
+            if clean_text(row.get("wallet"))
+        }
+
+        canonical_lookup = build_lookup(
+            load_rows(CANONICAL_TABLE),
+            (
+                "condition_id",
+                "market_id",
+                "canonical_market_id",
+            ),
+        )
+
+        for master in master_rows:
+            key = clean_text(
+                master.get("opportunity_key")
+            )
+            market_id = clean_text(
+                master.get("market_id")
+            )
+
+            consensus = (
+                consensus_lookup.get(key)
+                or consensus_lookup.get(market_id)
+            )
+
+            canonical = canonical_lookup.get(
+                market_id
+            )
+
+            decisions.append(
+                build_decision(
+                    master=master,
+                    consensus=consensus,
+                    trust_lookup=trust_lookup,
+                    canonical=canonical,
+                    minimum_data_completeness=(
+                        args.min_data_completeness
+                    ),
+                )
+            )
+
+        decisions.sort(
+            key=lambda decision: (
+                ACTION_PRIORITY.get(
+                    decision.decision_action,
+                    0,
+                ),
+                decision.actionability_score,
+                decision.decision_score,
+                decision.confidence,
+            ),
+            reverse=True,
+        )
+
+        if args.apply:
+            saved, history_saved = save_decisions(
+                decisions,
+                run_id,
+            )
+
+        counts_by_action = {
+            action: sum(
+                1
+                for decision in decisions
+                if decision.decision_action
+                == action
+            )
+            for action in ACTION_PRIORITY
+        }
+
+        finished = utc_now()
+        duration = (
+            finished - started
+        ).total_seconds()
+
+        connection = connect()
+
+        try:
+            connection.execute(
+                f"""
+                UPDATE {RUNS_TABLE}
+                SET finished_at = ?,
+                    source_rows_seen = ?,
+                    decisions_analyzed = ?,
+                    decisions_saved = ?,
+                    history_saved = ?,
+                    buy_count = ?,
+                    watch_count = ?,
+                    wait_count = ?,
+                    pass_count = ?,
+                    avoid_count = ?,
+                    veto_count = ?,
+                    status = 'SUCCESS',
+                    duration_seconds = ?
+                WHERE run_id = ?
+                """,
+                (
+                    finished.isoformat(
+                        timespec="seconds"
+                    ),
+                    len(master_rows),
+                    len(decisions),
+                    saved,
+                    history_saved,
+                    counts_by_action["BUY"],
+                    counts_by_action["WATCH"],
+                    counts_by_action["WAIT"],
+                    counts_by_action["PASS"],
+                    counts_by_action["AVOID"],
+                    sum(
+                        decision.hard_veto
+                        for decision in decisions
+                    ),
+                    duration,
+                    run_id,
+                ),
+            )
+
+            connection.commit()
+
+        finally:
+            connection.close()
+
+        print()
+        print("=" * 120)
+        print(
+            "POLYMARKET INSTITUTIONAL "
+            "DECISION ENGINE v2.0"
+        )
+        print("=" * 120)
+        print(
+            f"Database:                  "
+            f"{DATABASE_PATH}"
+        )
+        print(f"Mode:                      {mode}")
+        print(f"Run ID:                    {run_id}")
+        print(
+            f"Master opportunities:      "
+            f"{counts[MASTER_TABLE]}"
+        )
+        print(
+            f"Institutional consensus:   "
+            f"{counts[CONSENSUS_TABLE]}"
+        )
+        print(
+            f"Wallet trust profiles:     "
+            f"{counts[TRUST_TABLE]}"
+        )
+        print(
+            f"Canonical identities:      "
+            f"{counts[CANONICAL_TABLE]}"
+        )
+        print(
+            f"Decisions analyzed:        "
+            f"{len(decisions)}"
+        )
+        print(
+            f"Decisions saved:           {saved}"
+        )
+        print(
+            f"History saved:             "
+            f"{history_saved}"
+        )
+        print(
+            "BUY/WATCH/WAIT/PASS/AVOID: "
+            f"{counts_by_action['BUY']}/"
+            f"{counts_by_action['WATCH']}/"
+            f"{counts_by_action['WAIT']}/"
+            f"{counts_by_action['PASS']}/"
+            f"{counts_by_action['AVOID']}"
+        )
+        print(f"Duration:                  {duration:.3f}s")
+        print("=" * 120)
+
+        display_board(
+            decisions,
+            args.display_limit,
+        )
+
+        print()
+        print("=" * 120)
+
+        if mode == "DRY RUN":
+            print(
+                "Dry run complete. No current decisions "
+                "or history snapshots were changed."
+            )
+            print(
+                "Review the board, then rerun with "
+                "--apply."
+            )
+
+        else:
+            print(
+                f"Current decisions: {DECISION_TABLE}"
+            )
+            print(
+                f"Historical decisions: {HISTORY_TABLE}"
+            )
+
+        print(
+            "BUY is a research classification, not a "
+            "guarantee or position-sizing instruction."
+        )
+        print("=" * 120)
+
+    except Exception as error:
+        finished = utc_now()
+
+        connection = connect()
+
+        try:
+            connection.execute(
+                f"""
+                UPDATE {RUNS_TABLE}
+                SET finished_at = ?,
+                    status = 'FAILED',
+                    duration_seconds = ?,
+                    error_message = ?
+                WHERE run_id = ?
+                """,
+                (
+                    finished.isoformat(
+                        timespec="seconds"
+                    ),
+                    (
+                        finished - started
+                    ).total_seconds(),
+                    (
+                        f"{type(error).__name__}: "
+                        f"{error}"
+                    ),
+                    run_id,
+                ),
+            )
+
+            connection.commit()
+
+        finally:
+            connection.close()
+
+        raise
+
+
+if __name__ == "__main__":
+    main()

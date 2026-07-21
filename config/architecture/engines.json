@@ -1,0 +1,78 @@
+{
+    "schema_version":  "1.0",
+    "engines":  [
+                    {
+                        "version":  "1.0",
+                        "name":  "Canonical Market Identity",
+                        "service":  "IDENTITY",
+                        "description":  "Creates canonical market identities.",
+                        "module":  "canonical_market_identity_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Market Status",
+                        "service":  "MARKET_STATE",
+                        "description":  "Maintains normalized market lifecycle state.",
+                        "module":  "market_status_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Wallet Performance",
+                        "service":  "WALLET_INTELLIGENCE",
+                        "description":  "Measures historical wallet performance.",
+                        "module":  "wallet_performance_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Institutional Consensus",
+                        "service":  "MARKET_INTELLIGENCE",
+                        "description":  "Measures trusted wallet agreement.",
+                        "module":  "institutional_consensus_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Smart Money Flow",
+                        "service":  "MARKET_INTELLIGENCE",
+                        "description":  "Measures trusted capital movement.",
+                        "module":  "smart_money_flow_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Position Evolution",
+                        "service":  "MARKET_INTELLIGENCE",
+                        "description":  "Measures strengthening and weakening conviction.",
+                        "module":  "position_evolution_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Signal Fusion",
+                        "service":  "DECISION",
+                        "description":  "Combines independent intelligence signals.",
+                        "module":  "signal_fusion_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Opportunity Ranking",
+                        "service":  "DELIVERY",
+                        "description":  "Ranks delivery-ready market opportunities.",
+                        "module":  "opportunity_ranking_engine",
+                        "status":  "ACTIVE"
+                    },
+                    {
+                        "version":  "1.0",
+                        "name":  "Master Pipeline",
+                        "service":  "ORCHESTRATION",
+                        "description":  "Coordinates the intelligence pipeline.",
+                        "module":  "continuous_master_pipeline",
+                        "status":  "ACTIVE"
+                    }
+                ],
+    "architecture_version":  "0.6.0"
+}

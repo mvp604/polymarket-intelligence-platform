@@ -1,22 +1,59 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Virtual Environment
+# Virtual environments
 .venv/
+venv/
+env/
+ENV/
 
-# VS Code
-.vscode/
-
-# Environment Variables
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+secrets/
+credentials/
+*.pem
+*.key
 
-# Logs
-logs/
-
-# Database
+# Databases and local data
+*.db
+*.sqlite
+*.sqlite3
 database/*.db
+database/*.sqlite
+database/*.sqlite3
 
-# Generated research reports
-reports/*.md
-reports/*.json
+# Runtime output
+logs/
+backups/
+reports/
+tmp/
+temp/
+cache/
+
+# Generated files
+build/
+dist/
+*.egg-info/
+
+# VS Code and IDE files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local PowerShell backups
+.gitignore.backup_*
+runtime/*.log
+runtime/*.json
