@@ -57,3 +57,4 @@ desktop.ini
 .gitignore.backup_*
 runtime/*.log
 runtime/*.json
+.project_builder_backups/
