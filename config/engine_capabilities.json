@@ -1,0 +1,40 @@
+{
+  "engines": {
+    "elite_wallet_intelligence_engine": {
+      "tables": {
+        "positions": [
+          "wallet"
+        ],
+        "elite_wallet_profiles": [
+          "wallet",
+          "elite_status",
+          "wallet_score"
+        ],
+        "elite_wallet_profile_history": [
+          "wallet"
+        ],
+        "elite_wallet_category_profiles": [
+          "wallet"
+        ]
+      },
+      "views": [
+        "ranked_elite_wallets",
+        "ranked_elite_wallet_categories"
+      ]
+    },
+    "opportunity_enrichment_engine": {
+      "tables": {
+        "opportunity_enrichment_current": [],
+        "platform_events": []
+      },
+      "views": []
+    },
+    "institutional_review_engine": {
+      "tables": {
+        "institutional_reviews": [],
+        "platform_events": []
+      },
+      "views": []
+    }
+  }
+}
