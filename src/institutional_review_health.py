@@ -138,14 +138,21 @@ def main() -> int:
         ).fetchone()[0]
         print(f"{'Unreviewed opportunity events':<40} {pending:,}")
 
-        decisions = connection.execute(
-            """
-            SELECT institutional_decision, COUNT(*) AS total
-            FROM current_institutional_reviews
-            GROUP BY institutional_decision
-            ORDER BY institutional_decision
-            """
-        ).fetchall()
+        decisions = []
+
+        if exists(
+            connection,
+            "view",
+            "current_institutional_reviews",
+        ):
+            decisions = connection.execute(
+                """
+                SELECT institutional_decision, COUNT(*) AS total
+                FROM current_institutional_reviews
+                GROUP BY institutional_decision
+                ORDER BY institutional_decision
+                """
+            ).fetchall()
 
         if decisions:
             print("-" * 78)
