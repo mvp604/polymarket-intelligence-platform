@@ -33,7 +33,11 @@ MIGRATION_PATH = (
 
 ENGINE_VERSION = "1.0.0"
 CONSUMER_NAME = "institutional_review_engine_v1"
-SOURCE_EVENT_TYPES = ("OpportunityCreated", "OpportunityUpdated")
+SOURCE_EVENT_TYPES = (
+    "OpportunityCreated",
+    "OpportunityUpdated",
+    "OpportunityEnriched",
+)
 
 
 def utc_now() -> str:

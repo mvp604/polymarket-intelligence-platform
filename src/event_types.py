@@ -15,6 +15,7 @@ CONSENSUS_EXPIRED = "ConsensusExpired"
 # Opportunity Intelligence events
 OPPORTUNITY_CREATED = "OpportunityCreated"
 OPPORTUNITY_UPDATED = "OpportunityUpdated"
+OPPORTUNITY_ENRICHED = "OpportunityEnriched"
 OPPORTUNITY_TIER_CHANGED = "OpportunityTierChanged"
 OPPORTUNITY_EXPIRED = "OpportunityExpired"
 
