@@ -20,7 +20,7 @@ def main() -> int:
         repairs = ensure_schema(connection)
         connection.commit()
 
-    print("Outcome Resolution & Reporting v2 schema installed.")
+    print("Outcome Resolution & Reporting v2.1 schema installed.")
     if repairs:
         print("Repaired missing columns:")
         for repair in repairs:

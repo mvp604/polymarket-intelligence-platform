@@ -43,7 +43,7 @@ def main() -> int:
         connection.commit()
 
         print("=" * 100)
-        print("OUTCOME RESOLUTION & REPORTING v2 HEALTH")
+        print("OUTCOME RESOLUTION & REPORTING v2.1 HEALTH")
         print("=" * 100)
         for object_type, names in OBJECTS.items():
             for name in names:

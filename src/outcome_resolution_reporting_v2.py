@@ -22,7 +22,7 @@ from src.outcome_resolution_schema_v2 import (  # noqa: E402
 )
 
 REPORT_DIR = PROJECT_ROOT / "reports" / "performance"
-ENGINE_VERSION = "2.0.0"
+ENGINE_VERSION = "2.1.0"
 
 
 @dataclass(frozen=True)

@@ -167,6 +167,59 @@ def repair_missing_columns(connection: sqlite3.Connection) -> list[str]:
     return repairs
 
 
+def ensure_unique_keys(connection: sqlite3.Connection) -> list[str]:
+    """Repair legacy tables so column-targeted SQLite UPSERTs are valid.
+
+    Older repository versions may already contain these tables without their
+    intended composite primary keys. SQLite cannot add a primary key with
+    ALTER TABLE, so we remove duplicate logical rows deterministically and
+    create equivalent UNIQUE indexes.
+    """
+    repairs: list[str] = []
+    unique_keys = {
+        "market_resolutions": ("market_id", "outcome"),
+        "resolved_signal_results": ("market_id", "outcome"),
+        "daily_intelligence_reports": ("report_date", "report_type"),
+    }
+
+    for table_name, columns in unique_keys.items():
+        if not object_exists(connection, "table", table_name):
+            continue
+        available = table_columns(connection, table_name)
+        if not set(columns).issubset(available):
+            continue
+
+        quoted_columns = ", ".join(quote(column) for column in columns)
+        # Preserve the newest physical row for each logical key. This makes
+        # the migration safe even when a partially-installed legacy module
+        # inserted duplicates before the unique constraint existed.
+        cursor = connection.execute(
+            f"""
+            DELETE FROM {quote(table_name)}
+            WHERE rowid NOT IN (
+                SELECT MAX(rowid)
+                FROM {quote(table_name)}
+                GROUP BY {quoted_columns}
+            )
+            """
+        )
+        if cursor.rowcount and cursor.rowcount > 0:
+            repairs.append(
+                f"{table_name}.deduplicated_rows={cursor.rowcount}"
+            )
+
+        index_name = f"uq_{table_name}_{'_'.join(columns)}"
+        existed = object_exists(connection, "index", index_name)
+        connection.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {quote(index_name)} "
+            f"ON {quote(table_name)} ({quoted_columns})"
+        )
+        if not existed:
+            repairs.append(f"{table_name}.unique_key")
+
+    return repairs
+
+
 def ensure_indexes(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
@@ -289,6 +342,7 @@ def ensure_schema(
 ) -> list[str]:
     ensure_base_tables(connection)
     repairs = repair_missing_columns(connection)
+    repairs.extend(ensure_unique_keys(connection))
     ensure_indexes(connection)
     ensure_views(connection)
     return repairs
