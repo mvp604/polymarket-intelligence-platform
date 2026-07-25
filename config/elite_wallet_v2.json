@@ -1,0 +1,45 @@
+{
+  "bayesian_prior_wins": 5.0,
+  "bayesian_prior_losses": 5.0,
+  "sample_size_full_confidence": 100,
+  "minimum_consensus_positions": 10,
+  "minimum_elite_positions": 25,
+  "minimum_consensus_score": 45.0,
+  "minimum_elite_score": 65.0,
+  "roi_outlier_absolute_percent": 300.0,
+  "roi_score_divisor": 2.0,
+  "consistency_range_divisor": 8.0,
+  "board_limit": 20,
+  "tiers": [
+    {
+      "name": "Institutional",
+      "grade": "S+",
+      "minimum_score": 85.0,
+      "minimum_sample_strength": 80.0
+    },
+    {
+      "name": "Elite",
+      "grade": "S",
+      "minimum_score": 75.0,
+      "minimum_sample_strength": 60.0
+    },
+    {
+      "name": "Professional",
+      "grade": "A",
+      "minimum_score": 65.0,
+      "minimum_sample_strength": 40.0
+    },
+    {
+      "name": "Advanced",
+      "grade": "B",
+      "minimum_score": 55.0,
+      "minimum_sample_strength": 25.0
+    },
+    {
+      "name": "Developing",
+      "grade": "WATCH",
+      "minimum_score": 40.0,
+      "minimum_sample_strength": 10.0
+    }
+  ]
+}
