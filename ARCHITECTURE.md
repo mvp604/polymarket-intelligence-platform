@@ -1,0 +1,3 @@
+# Architecture
+
+Layered modular architecture.

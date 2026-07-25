@@ -1,0 +1,115 @@
+{
+    "database":  "database/polymarket.db",
+    "migration_runner":  "database/migration_runner.py",
+    "logs_directory":  "logs/automation",
+    "lock_file":  "logs/automation/platform.lock",
+    "stop_on_required_error":  true,
+    "migration_timeout_seconds":  300,
+    "steps":  [
+                  {
+                      "name":  "wallet_discovery",
+                      "module":  "src.elite_wallet_discovery_engine",
+                      "required":  false,
+                      "enabled":  true,
+                      "timeout_seconds":  600,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "wallet_tracker",
+                      "module":  "src.wallet_tracker",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  900,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "wallet_performance",
+                      "module":  "src.wallet_performance_engine",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  600,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "universal_market_collector",
+                      "module":  "src.universal_market_collector",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  1200,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "market_change",
+                      "module":  "src.market_change_engine",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  900,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "feature_engine",
+                      "module":  "src.feature_engine",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  1800,
+                      "arguments":  [
+                                        "--history-limit",
+                                        "100",
+                                        "--display-limit",
+                                        "25"
+                                    ]
+                  },
+                  {
+                      "name":  "consensus_intelligence",
+                      "module":  "src.consensus_intelligence_engine_v1_0_1",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  900,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "intelligence_warehouse",
+                      "module":  "src.intelligence_warehouse_engine",
+                      "required":  true,
+                      "enabled":  true
+                  },
+                  {
+                      "name":  "opportunity_intelligence",
+                      "module":  "src.opportunity_intelligence_engine",
+                      "required":  true,
+                      "enabled":  true
+                  },
+                  {
+                      "name":  "resolution_warehouse",
+                      "module":  "src.resolution_warehouse_engine",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  900,
+                      "arguments":  [
+
+                                    ]
+                  },
+                  {
+                      "name":  "resolution_outcome",
+                      "module":  "src.resolution_outcome_engine",
+                      "required":  true,
+                      "enabled":  true,
+                      "timeout_seconds":  900,
+                      "arguments":  [
+
+                                    ]
+                  }
+              ]
+}

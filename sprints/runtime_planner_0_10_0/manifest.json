@@ -1,0 +1,52 @@
+{
+    "commands":  [
+                     [
+                         "python",
+                         "-m",
+                         "py_compile",
+                         "src/runtime/planner.py",
+                         "src/runtime/dependency_graph.py",
+                         "src/runtime/__init__.py",
+                         "tests/runtime/test_planner.py"
+                     ],
+                     [
+                         "python",
+                         "-m",
+                         "unittest",
+                         "tests.runtime.test_planner",
+                         "tests.runtime.test_dependency_graph",
+                         "tests.runtime.test_engine",
+                         "tests.runtime.test_registry",
+                         "-v"
+                     ],
+                     [
+                         "python",
+                         "-m",
+                         "unittest",
+                         "discover",
+                         "-s",
+                         "tests",
+                         "-v"
+                     ],
+                     [
+                         "python",
+                         "-c",
+                         "from src.runtime import DependencyGraph, ExecutionPlan, ExecutionStep, Planner; print(\u0027Runtime Planner imports validated.\u0027)"
+                     ]
+                 ],
+    "name":  "runtime_planner_0_10_0",
+    "files":  [
+                  {
+                      "target":  "src/runtime/planner.py",
+                      "source":  "payload/src/runtime/planner.py"
+                  },
+                  {
+                      "target":  "src/runtime/__init__.py",
+                      "source":  "payload/src/runtime/__init__.py"
+                  },
+                  {
+                      "target":  "tests/runtime/test_planner.py",
+                      "source":  "payload/tests/runtime/test_planner.py"
+                  }
+              ]
+}

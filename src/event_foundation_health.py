@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+DATABASE_PATH = Path("database") / "polymarket.db"
+
+
+def exists(connection: sqlite3.Connection, object_type: str, name: str) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type=? AND name=?",
+        (object_type, name),
+    ).fetchone() is not None
+
+
+def main() -> None:
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.row_factory = sqlite3.Row
+    healthy = True
+
+    print("=" * 70)
+    print("PLATFORM EVENT FOUNDATION HEALTH")
+    print("=" * 70)
+
+    for table in [
+        "platform_events",
+        "event_consumers",
+        "event_consumer_failures",
+        "event_consumer_receipts",
+        "alert_decisions",
+    ]:
+        present = exists(connection, "table", table)
+        healthy = healthy and present
+        print(f"{table}: {'OK' if present else 'MISSING'}")
+
+    triggers = connection.execute(
+        """
+        SELECT name, tbl_name
+        FROM sqlite_master
+        WHERE type='trigger'
+          AND name LIKE 'trg_%_publish_opportunity_%'
+        ORDER BY name
+        """
+    ).fetchall()
+    print(f"Opportunity event triggers: {len(triggers)}")
+    for trigger in triggers:
+        print(f"  {trigger['name']} -> {trigger['tbl_name']}")
+    healthy = healthy and len(triggers) >= 1
+
+    if exists(connection, "view", "platform_event_health"):
+        health = connection.execute("SELECT * FROM platform_event_health").fetchone()
+        print(f"Total events: {health['total_events'] or 0}")
+        print(f"Pending: {health['pending_events'] or 0}")
+        print(f"Processing: {health['processing_events'] or 0}")
+        print(f"Processed: {health['processed_events'] or 0}")
+        print(f"Failed: {health['failed_events'] or 0}")
+        print(f"Latest event: {health['latest_event_at']}")
+        healthy = healthy and (health["failed_events"] or 0) == 0
+    else:
+        print("platform_event_health view: MISSING")
+        healthy = False
+
+    duplicate_groups = connection.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM (
+            SELECT deduplication_key
+            FROM platform_events
+            WHERE deduplication_key IS NOT NULL
+            GROUP BY deduplication_key
+            HAVING COUNT(*) > 1
+        )
+        """
+    ).fetchone()["total"]
+    print(f"Duplicate deduplication keys: {duplicate_groups}")
+    healthy = healthy and duplicate_groups == 0
+    print(f"Overall status: {'HEALTHY' if healthy else 'ATTENTION REQUIRED'}")
+    print("=" * 70)
+    connection.close()
+
+    if not healthy:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
