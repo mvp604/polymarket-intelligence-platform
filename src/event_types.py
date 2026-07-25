@@ -16,6 +16,7 @@ CONSENSUS_EXPIRED = "ConsensusExpired"
 OPPORTUNITY_CREATED = "OpportunityCreated"
 OPPORTUNITY_UPDATED = "OpportunityUpdated"
 OPPORTUNITY_ENRICHED = "OpportunityEnriched"
+ELITE_WALLET_PROFILED = "EliteWalletProfiled"
 OPPORTUNITY_TIER_CHANGED = "OpportunityTierChanged"
 OPPORTUNITY_EXPIRED = "OpportunityExpired"
 

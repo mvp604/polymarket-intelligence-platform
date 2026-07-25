@@ -282,6 +282,42 @@ def enrich(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
             "wallet_quality_score",
         )
     )
+
+    elite_profile_quality = 0.0
+    if table_exists(connection, "elite_wallet_profiles"):
+        wallet_addresses = []
+        for candidate in (
+            value_from(row, "wallets_json"),
+            value_from(row, "wallet_addresses_json"),
+            value_from(row, "wallets"),
+        ):
+            if not candidate:
+                continue
+            if isinstance(candidate, str):
+                try:
+                    parsed = json.loads(candidate)
+                except json.JSONDecodeError:
+                    parsed = [item.strip() for item in candidate.split(",")]
+            else:
+                parsed = candidate
+            if isinstance(parsed, list):
+                wallet_addresses.extend(str(item) for item in parsed if item)
+
+        if wallet_addresses:
+            placeholders = ",".join("?" for _ in wallet_addresses)
+            profile_row = connection.execute(
+                f"SELECT AVG(wallet_score) FROM elite_wallet_profiles "
+                f"WHERE wallet IN ({placeholders})",
+                wallet_addresses,
+            ).fetchone()
+            elite_profile_quality = normalized_score(
+                profile_row[0] if profile_row else 0
+            )
+
+    if elite_profile_quality > 0:
+        wallet_quality = clamp(
+            wallet_quality * 0.35 + elite_profile_quality * 0.65
+        )
     if wallet_quality <= 0:
         elite_ratio = elite_count / max(wallet_count, 1)
         wallet_quality = clamp(

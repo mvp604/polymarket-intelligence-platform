@@ -1,994 +1,505 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import sqlite3
 import statistics
 import sys
 import uuid
-from collections import defaultdict
-from dataclasses import dataclass, field
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.platform_events import PlatformEvent, build_deduplication_key, create_event_tables, publish_event
+
 DATABASE_PATH = PROJECT_ROOT / "database" / "polymarket.db"
+MIGRATION_PATH = PROJECT_ROOT / "database" / "migrations" / "006_elite_wallet_intelligence.sql"
 ENGINE_VERSION = "1.0.0"
-
-WALLET_ALIASES = (
-    "wallet", "wallet_address", "user", "user_address", "proxy_wallet",
-    "trader", "trader_address", "address", "owner",
-)
-MARKET_ALIASES = (
-    "market_id", "condition_id", "token_id", "asset_id", "slug", "market",
-)
-TITLE_ALIASES = (
-    "question", "title", "market_title", "market_question", "event_title",
-)
-CATEGORY_ALIASES = (
-    "category", "market_category", "sport", "league", "vertical", "topic",
-)
-PNL_ALIASES = (
-    "realized_pnl", "cash_pnl", "total_pnl", "pnl", "profit", "net_pnl",
-)
-ROI_ALIASES = (
-    "roi", "roi_pct", "return_pct", "percent_pnl", "profit_percentage",
-)
-WIN_RATE_ALIASES = (
-    "win_rate", "accuracy", "prediction_accuracy", "resolved_win_rate",
-)
-RESOLVED_ALIASES = (
-    "resolved_markets", "resolved_count", "settled_count", "closed_markets",
-    "markets_resolved", "resolution_count",
-)
-TRADE_COUNT_ALIASES = (
-    "trade_count", "trades", "total_trades", "activity_count",
-)
-CAPITAL_ALIASES = (
-    "capital_deployed", "total_volume", "volume", "current_value",
-    "position_value", "value", "amount", "size", "shares",
-)
-TIMESTAMP_ALIASES = (
-    "updated_at", "calculated_at", "scanned_at", "created_at", "timestamp",
-    "trade_time", "event_time", "last_updated",
-)
-
-PERFORMANCE_NAME_HINTS = (
-    "wallet_performance", "elite_wallet", "wallet_rank", "wallet_score",
-    "trader_performance", "wallet_stats",
-)
-ACTIVITY_NAME_HINTS = (
-    "official_wallet_trades", "official_wallet_activity", "positions",
-    "wallet_position", "trade", "activity",
-)
 
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def quote(identifier: str) -> str:
-    return '"' + identifier.replace('"', '""') + '"'
+def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    return max(low, min(high, value))
 
 
-def table_names(connection: sqlite3.Connection) -> list[str]:
-    return [
-        str(row[0])
-        for row in connection.execute(
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-            """
-        ).fetchall()
-    ]
-
-
-def columns(connection: sqlite3.Connection, table: str) -> list[str]:
-    return [
-        str(row[1])
-        for row in connection.execute(
-            f"PRAGMA table_info({quote(table)})"
-        ).fetchall()
-    ]
-
-
-def row_count(connection: sqlite3.Connection, table: str) -> int:
-    return int(
-        connection.execute(
-            f"SELECT COUNT(*) FROM {quote(table)}"
-        ).fetchone()[0]
-    )
-
-
-def find_column(available: Iterable[str], aliases: Iterable[str]) -> str | None:
-    by_lower = {column.lower(): column for column in available}
-    for alias in aliases:
-        if alias.lower() in by_lower:
-            return by_lower[alias.lower()]
-    return None
-
-
-def safe_float(value: Any) -> float | None:
-    if value is None:
-        return None
+def safe_float(value: Any, default: float = 0.0) -> float:
     try:
-        parsed = float(value)
+        number = float(value)
     except (TypeError, ValueError):
-        return None
-    if math.isnan(parsed) or math.isinf(parsed):
-        return None
-    return parsed
+        return default
+    if math.isnan(number) or math.isinf(number):
+        return default
+    return number
 
 
-def normalize_rate(value: float | None) -> float | None:
-    if value is None:
-        return None
-    if -1.0 <= value <= 1.0:
-        return value * 100.0
-    return value
+def checksum(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def percentile_ranks(values: dict[str, float | None]) -> dict[str, float]:
-    numeric = sorted(value for value in values.values() if value is not None)
-    if not numeric:
-        return {key: 50.0 for key in values}
-    if len(numeric) == 1:
-        return {key: 50.0 for key in values}
-
-    result: dict[str, float] = {}
-    for key, value in values.items():
-        if value is None:
-            result[key] = 50.0
-            continue
-        lower = sum(1 for item in numeric if item < value)
-        equal = sum(1 for item in numeric if item == value)
-        rank = (lower + 0.5 * equal) / len(numeric)
-        result[key] = max(0.0, min(100.0, rank * 100.0))
-    return result
+def table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone() is not None
 
 
-def infer_category(explicit: Any, title: Any) -> str:
-    if explicit is not None and str(explicit).strip():
-        return str(explicit).strip()[:80]
-
-    text = str(title or "").lower()
-    category_rules = (
-        ("Soccer", ("soccer", "football", "epl", "champions league", "world cup",
-                    "la liga", "serie a", "bundesliga", "mls", "uefa", "fifa")),
-        ("Basketball", ("nba", "wnba", "basketball", "ncaa")),
-        ("American Football", ("nfl", "super bowl", "american football")),
-        ("Baseball", ("mlb", "baseball", "world series")),
-        ("Hockey", ("nhl", "hockey", "stanley cup")),
-        ("MMA", ("ufc", "mma", "fight night")),
-        ("Tennis", ("tennis", "wimbledon", "us open", "french open")),
-        ("Crypto", ("bitcoin", "btc", "ethereum", "eth", "crypto", "solana")),
-        ("Politics", ("election", "president", "senate", "congress", "nomination",
-                      "prime minister", "governor", "democratic", "republican")),
-        ("Economics", ("fed", "interest rate", "inflation", "cpi", "gdp",
-                       "unemployment", "recession")),
-        ("Technology", ("openai", "apple", "google", "microsoft", "ai model",
-                        "artificial intelligence")),
-        ("Entertainment", ("oscar", "grammy", "movie", "box office", "album")),
-        ("Weather", ("temperature", "rain", "snow", "hurricane", "weather")),
-    )
-    for category, terms in category_rules:
-        if any(term in text for term in terms):
-            return category
-    return "Other"
-
-
-@dataclass
-class WalletAggregate:
-    wallet: str
-    pnl_values: list[float] = field(default_factory=list)
-    roi_values: list[float] = field(default_factory=list)
-    win_rates: list[float] = field(default_factory=list)
-    resolved_counts: list[float] = field(default_factory=list)
-    trade_counts: list[float] = field(default_factory=list)
-    capital_values: list[float] = field(default_factory=list)
-    observed_rows: int = 0
-    markets: set[str] = field(default_factory=set)
-    sources: set[str] = field(default_factory=set)
-    categories: dict[str, "CategoryAggregate"] = field(
-        default_factory=lambda: defaultdict(CategoryAggregate)
-    )
-
-
-@dataclass
-class CategoryAggregate:
-    pnl_values: list[float] = field(default_factory=list)
-    roi_values: list[float] = field(default_factory=list)
-    win_rates: list[float] = field(default_factory=list)
-    resolved_count: float = 0.0
-    trade_count: int = 0
-    capital: float = 0.0
-    markets: set[str] = field(default_factory=set)
-
-
-def discover_sources(
-    connection: sqlite3.Connection,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    performance_sources: list[dict[str, Any]] = []
-    activity_sources: list[dict[str, Any]] = []
-
-    excluded_prefixes = (
-        "wallet_intelligence", "elite_wallet_intelligence", "elite_wallet_",
-        "opportunity_", "schema_", "sqlite_",
-    )
-
-    for table in table_names(connection):
-        lowered = table.lower()
-        if lowered.startswith(excluded_prefixes):
-            continue
-
-        available = columns(connection, table)
-        wallet_col = find_column(available, WALLET_ALIASES)
-        if wallet_col is None:
-            continue
-
-        mapping = {
-            "table": table,
-            "rows": row_count(connection, table),
-            "wallet": wallet_col,
-            "market": find_column(available, MARKET_ALIASES),
-            "title": find_column(available, TITLE_ALIASES),
-            "category": find_column(available, CATEGORY_ALIASES),
-            "pnl": find_column(available, PNL_ALIASES),
-            "roi": find_column(available, ROI_ALIASES),
-            "win_rate": find_column(available, WIN_RATE_ALIASES),
-            "resolved": find_column(available, RESOLVED_ALIASES),
-            "trade_count": find_column(available, TRADE_COUNT_ALIASES),
-            "capital": find_column(available, CAPITAL_ALIASES),
-            "timestamp": find_column(available, TIMESTAMP_ALIASES),
-        }
-
-        metric_count = sum(
-            mapping[key] is not None
-            for key in ("pnl", "roi", "win_rate", "resolved", "trade_count")
-        )
-        activity_count = sum(
-            mapping[key] is not None
-            for key in ("market", "title", "category", "capital", "timestamp")
-        )
-
-        performance_hint = any(hint in lowered for hint in PERFORMANCE_NAME_HINTS)
-        activity_hint = any(hint in lowered for hint in ACTIVITY_NAME_HINTS)
-
-        if metric_count >= 2 or (performance_hint and metric_count >= 1):
-            mapping["quality"] = metric_count * 100 + min(mapping["rows"], 99999)
-            performance_sources.append(mapping)
-
-        if activity_count >= 2 or (activity_hint and activity_count >= 1):
-            mapping = dict(mapping)
-            mapping["quality"] = activity_count * 100 + min(mapping["rows"], 99999)
-            activity_sources.append(mapping)
-
-    performance_sources.sort(key=lambda item: item["quality"], reverse=True)
-    activity_sources.sort(key=lambda item: item["quality"], reverse=True)
-
-    return performance_sources[:4], activity_sources[:6]
-
-
-def select_rows(
-    connection: sqlite3.Connection,
-    source: dict[str, Any],
-    limit: int | None = None,
-) -> Iterable[sqlite3.Row]:
-    selected: list[str] = []
-    aliases = (
-        "wallet", "market", "title", "category", "pnl", "roi",
-        "win_rate", "resolved", "trade_count", "capital", "timestamp",
-    )
-    for alias in aliases:
-        column = source.get(alias)
-        if column is None:
-            selected.append(f"NULL AS {quote(alias)}")
-        else:
-            selected.append(f"{quote(column)} AS {quote(alias)}")
-
-    sql = (
-        f"SELECT {', '.join(selected)} "
-        f"FROM {quote(source['table'])} "
-        f"WHERE {quote(source['wallet'])} IS NOT NULL"
-    )
-    if limit is not None:
-        sql += f" LIMIT {int(limit)}"
-    return connection.execute(sql)
-
-
-def load_data(
-    connection: sqlite3.Connection,
-    performance_sources: list[dict[str, Any]],
-    activity_sources: list[dict[str, Any]],
-) -> dict[str, WalletAggregate]:
-    wallets: dict[str, WalletAggregate] = {}
-
-    def get_wallet(raw: Any) -> WalletAggregate | None:
-        if raw is None:
-            return None
-        wallet = str(raw).strip()
-        if not wallet:
-            return None
-        return wallets.setdefault(wallet, WalletAggregate(wallet=wallet))
-
-    for source in performance_sources:
-        for row in select_rows(connection, source):
-            aggregate = get_wallet(row["wallet"])
-            if aggregate is None:
-                continue
-            aggregate.sources.add(source["table"])
-            aggregate.observed_rows += 1
-
-            pnl = safe_float(row["pnl"])
-            roi = normalize_rate(safe_float(row["roi"]))
-            win_rate = normalize_rate(safe_float(row["win_rate"]))
-            resolved = safe_float(row["resolved"])
-            trades = safe_float(row["trade_count"])
-            capital = safe_float(row["capital"])
-
-            if pnl is not None:
-                aggregate.pnl_values.append(pnl)
-            if roi is not None:
-                aggregate.roi_values.append(roi)
-            if win_rate is not None:
-                aggregate.win_rates.append(win_rate)
-            if resolved is not None:
-                aggregate.resolved_counts.append(max(0.0, resolved))
-            if trades is not None:
-                aggregate.trade_counts.append(max(0.0, trades))
-            if capital is not None:
-                aggregate.capital_values.append(abs(capital))
-
-    for source in activity_sources:
-        for row in select_rows(connection, source):
-            aggregate = get_wallet(row["wallet"])
-            if aggregate is None:
-                continue
-
-            aggregate.sources.add(source["table"])
-            aggregate.observed_rows += 1
-
-            market = str(row["market"] or "").strip()
-            title = row["title"]
-            category = infer_category(row["category"], title)
-            pnl = safe_float(row["pnl"])
-            roi = normalize_rate(safe_float(row["roi"]))
-            win_rate = normalize_rate(safe_float(row["win_rate"]))
-            resolved = safe_float(row["resolved"])
-            capital = safe_float(row["capital"])
-
-            if market:
-                aggregate.markets.add(market)
-
-            category_agg = aggregate.categories[category]
-            category_agg.trade_count += 1
-            if market:
-                category_agg.markets.add(market)
-            if capital is not None:
-                category_agg.capital += abs(capital)
-                aggregate.capital_values.append(abs(capital))
-            if pnl is not None:
-                category_agg.pnl_values.append(pnl)
-            if roi is not None:
-                category_agg.roi_values.append(roi)
-            if win_rate is not None:
-                category_agg.win_rates.append(win_rate)
-            if resolved is not None:
-                category_agg.resolved_count += max(0.0, resolved)
-
-    return wallets
-
-
-def average(values: list[float]) -> float | None:
-    return statistics.fmean(values) if values else None
-
-
-def grade(score: float, confidence: float) -> str:
-    if score >= 90 and confidence >= 80:
-        return "S+"
-    if score >= 82 and confidence >= 65:
-        return "S"
-    if score >= 75 and confidence >= 50:
-        return "A+"
-    if score >= 68 and confidence >= 35:
-        return "A"
-    if score >= 58:
-        return "B"
-    return "C"
-
-
-def confidence_label(score: float) -> str:
-    if score >= 80:
-        return "HIGH"
-    if score >= 55:
-        return "MEDIUM"
-    if score >= 30:
-        return "LOW"
-    return "PROVISIONAL"
+def columns(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in connection.execute(f'PRAGMA table_info("{table}")')}
 
 
 def ensure_schema(connection: sqlite3.Connection) -> None:
-    connection.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS elite_wallet_intelligence_runs (
-            run_id TEXT PRIMARY KEY,
-            engine_version TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
-            status TEXT NOT NULL,
-            wallets_scored INTEGER NOT NULL DEFAULT 0,
-            category_profiles INTEGER NOT NULL DEFAULT 0,
-            performance_sources_json TEXT NOT NULL DEFAULT '[]',
-            activity_sources_json TEXT NOT NULL DEFAULT '[]',
-            warnings_json TEXT NOT NULL DEFAULT '[]'
-        );
-
-        CREATE TABLE IF NOT EXISTS elite_wallet_intelligence (
-            wallet TEXT PRIMARY KEY,
-            overall_score REAL NOT NULL,
-            elite_grade TEXT NOT NULL,
-            confidence_score REAL NOT NULL,
-            confidence_level TEXT NOT NULL,
-            profitability_score REAL NOT NULL,
-            consistency_score REAL NOT NULL,
-            experience_score REAL NOT NULL,
-            activity_score REAL NOT NULL,
-            specialization_score REAL NOT NULL,
-            total_pnl REAL,
-            average_roi REAL,
-            win_rate REAL,
-            resolved_markets REAL NOT NULL DEFAULT 0,
-            trade_count REAL NOT NULL DEFAULT 0,
-            unique_markets INTEGER NOT NULL DEFAULT 0,
-            capital_observed REAL NOT NULL DEFAULT 0,
-            best_category TEXT,
-            best_category_score REAL,
-            source_count INTEGER NOT NULL DEFAULT 0,
-            source_tables_json TEXT NOT NULL DEFAULT '[]',
-            methodology_version TEXT NOT NULL,
-            calculated_at TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_elite_wallet_rank
-        ON elite_wallet_intelligence(
-            elite_grade,
-            overall_score DESC,
-            confidence_score DESC
-        );
-
-        CREATE TABLE IF NOT EXISTS elite_wallet_category_intelligence (
-            wallet TEXT NOT NULL,
-            category TEXT NOT NULL,
-            category_score REAL NOT NULL,
-            category_grade TEXT NOT NULL,
-            confidence_score REAL NOT NULL,
-            confidence_level TEXT NOT NULL,
-            trade_count INTEGER NOT NULL DEFAULT 0,
-            unique_markets INTEGER NOT NULL DEFAULT 0,
-            resolved_markets REAL NOT NULL DEFAULT 0,
-            capital_observed REAL NOT NULL DEFAULT 0,
-            average_roi REAL,
-            win_rate REAL,
-            specialization_share REAL NOT NULL DEFAULT 0,
-            evidence_status TEXT NOT NULL,
-            calculated_at TEXT NOT NULL,
-            PRIMARY KEY(wallet, category),
-            FOREIGN KEY(wallet) REFERENCES elite_wallet_intelligence(wallet)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_elite_wallet_category_rank
-        ON elite_wallet_category_intelligence(
-            category,
-            category_score DESC,
-            confidence_score DESC
-        );
-
-        CREATE TABLE IF NOT EXISTS elite_wallet_intelligence_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL,
-            wallet TEXT NOT NULL,
-            overall_score REAL NOT NULL,
-            elite_grade TEXT NOT NULL,
-            confidence_score REAL NOT NULL,
-            calculated_at TEXT NOT NULL
-        );
-
-        CREATE VIEW IF NOT EXISTS elite_wallet_leaderboard AS
-        SELECT
-            wallet,
-            overall_score,
-            elite_grade,
-            confidence_score,
-            confidence_level,
-            total_pnl,
-            average_roi,
-            win_rate,
-            resolved_markets,
-            unique_markets,
-            best_category,
-            best_category_score,
-            calculated_at
-        FROM elite_wallet_intelligence
-        WHERE confidence_score >= 30
-        ORDER BY
-            overall_score DESC,
-            confidence_score DESC;
-        """
-    )
+    if not MIGRATION_PATH.exists():
+        raise RuntimeError(f"Migration not found: {MIGRATION_PATH}")
+    connection.executescript(MIGRATION_PATH.read_text(encoding="utf-8"))
+    create_event_tables(connection)
 
 
-def score_wallets(
-    wallets: dict[str, WalletAggregate],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    totals = {
-        wallet: {
-            "pnl": sum(agg.pnl_values) if agg.pnl_values else None,
-            "roi": average(agg.roi_values),
-            "win_rate": average(agg.win_rates),
-            "resolved": max(agg.resolved_counts) if agg.resolved_counts else 0.0,
-            "trades": max(
-                [float(agg.observed_rows), *agg.trade_counts]
-            ) if (agg.trade_counts or agg.observed_rows) else 0.0,
-            "capital": sum(agg.capital_values),
-            "markets": len(agg.markets),
-        }
-        for wallet, agg in wallets.items()
+def infer_category(title: str) -> str:
+    value = (title or "").lower()
+    groups = {
+        "SOCCER": ("world cup", "corners", "team to advance", "both teams to score", "premier league", "la liga"),
+        "BASKETBALL": ("nba", "wnba", "basketball", "rebounds"),
+        "BASEBALL": ("mlb", "baseball", "home run", "strikeouts"),
+        "FOOTBALL": ("nfl", "super bowl", "touchdown"),
+        "HOCKEY": ("nhl", "stanley cup", "hockey"),
+        "COMBAT": ("ufc", "mma", "boxing"),
+        "TENNIS": ("tennis", "wimbledon", "us open"),
+        "POLITICS": ("president", "election", "nomination", "senate", "governor"),
+        "CRYPTO": ("bitcoin", "ethereum", "solana", "crypto", "btc", "eth"),
+        "ECONOMY": ("fed", "interest rate", "inflation", "cpi", "gdp"),
     }
+    for category, terms in groups.items():
+        if any(term in value for term in terms):
+            return category
+    if " vs. " in value or " vs " in value:
+        return "SOCCER"
+    return "OTHER"
 
-    pnl_rank = percentile_ranks({w: item["pnl"] for w, item in totals.items()})
-    roi_rank = percentile_ranks({w: item["roi"] for w, item in totals.items()})
-    win_rank = percentile_ranks({w: item["win_rate"] for w, item in totals.items()})
-    resolved_rank = percentile_ranks(
-        {w: math.log1p(item["resolved"]) for w, item in totals.items()}
+
+def load_positions(connection: sqlite3.Connection) -> list[sqlite3.Row]:
+    if not table_exists(connection, "positions"):
+        raise RuntimeError("Required positions table is missing.")
+    available = columns(connection, "positions")
+    required = {"wallet", "market_id", "title", "outcome"}
+    missing = required - available
+    if missing:
+        raise RuntimeError("positions table missing: " + ", ".join(sorted(missing)))
+
+    def expr(candidates: tuple[str, ...], alias: str, default: str = "NULL") -> str:
+        for candidate in candidates:
+            if candidate in available:
+                return f'p."{candidate}" AS "{alias}"'
+        return f'{default} AS "{alias}"'
+
+    fields = [
+        'p."wallet" AS "wallet"',
+        'p."market_id" AS "market_id"',
+        'p."title" AS "title"',
+        'p."outcome" AS "outcome"',
+        expr(("shares", "size", "position_size"), "shares", "0"),
+        expr(("average_price", "avg_price", "entry_price"), "average_price"),
+        expr(("current_price", "price"), "current_price"),
+        expr(("current_value", "value", "position_value"), "current_value", "0"),
+        expr(("cash_pnl", "realized_pnl", "pnl"), "cash_pnl", "0"),
+        expr(("percent_pnl", "roi_percent", "pnl_percent"), "percent_pnl", "0"),
+        expr(("scanned_at", "observed_at", "updated_at"), "observed_at"),
+        expr(("resolved", "is_resolved"), "resolved_flag"),
+        expr(("won", "is_winner"), "won_flag"),
+    ]
+    return connection.execute(
+        f'SELECT {", ".join(fields)} FROM positions p '
+        "WHERE p.wallet IS NOT NULL AND TRIM(p.wallet) <> '' ORDER BY p.wallet"
+    ).fetchall()
+
+
+def is_resolved(row: sqlite3.Row) -> bool:
+    if row["resolved_flag"] is not None:
+        return bool(int(safe_float(row["resolved_flag"])))
+    if row["current_price"] is None:
+        return False
+    price = safe_float(row["current_price"])
+    return price <= 0.01 or price >= 0.99
+
+
+def is_win(row: sqlite3.Row) -> bool:
+    if row["won_flag"] is not None:
+        return bool(int(safe_float(row["won_flag"])))
+    return is_resolved(row) and safe_float(row["cash_pnl"]) > 0
+
+
+def position_value(row: sqlite3.Row) -> float:
+    current = max(0.0, safe_float(row["current_value"]))
+    if current > 0:
+        return current
+    return max(0.0, safe_float(row["shares"])) * max(0.0, safe_float(row["average_price"]))
+
+
+def logarithmic_score(value: float, reference: float) -> float:
+    if value <= 0:
+        return 0.0
+    return clamp(100.0 * math.log1p(value) / math.log1p(reference))
+
+
+def grade(score: float) -> str:
+    if score >= 90: return "S+"
+    if score >= 82: return "S"
+    if score >= 74: return "A"
+    if score >= 66: return "B"
+    if score >= 55: return "WATCH"
+    return "PASS"
+
+
+def status(score: float, resolved: int, pnl: float, quality: float) -> str:
+    if score >= 82 and resolved >= 20 and pnl > 0 and quality >= 70:
+        return "ELITE"
+    if score >= 72 and resolved >= 12 and pnl > 0 and quality >= 55:
+        return "QUALIFIED"
+    if score >= 58 and resolved >= 5:
+        return "WATCHLIST"
+    return "UNVERIFIED"
+
+
+def consistency_score(pnls: list[float], hit_rate: float) -> float:
+    if not pnls:
+        return 0.0
+    if len(pnls) == 1:
+        return clamp(hit_rate * 0.6)
+    mean = statistics.fmean(pnls)
+    deviation = statistics.pstdev(pnls)
+    stability = 100.0 / (1.0 + deviation / (abs(mean) + 25.0))
+    downside = sum(pnl < 0 for pnl in pnls) / len(pnls)
+    return clamp(stability * 0.55 + hit_rate * 0.35 + (1.0 - downside) * 10.0)
+
+
+def sizing_discipline(values: list[float]) -> float:
+    positive = [v for v in values if v > 0]
+    if not positive:
+        return 0.0
+    if len(positive) == 1:
+        return 45.0
+    mean = statistics.fmean(positive)
+    deviation = statistics.pstdev(positive)
+    return clamp(100.0 / (1.0 + deviation / mean)) if mean > 0 else 0.0
+
+
+def specialization(counts: Counter[str]) -> tuple[str, float]:
+    total = sum(counts.values())
+    if not total:
+        return "OTHER", 0.0
+    primary, count = counts.most_common(1)[0]
+    return primary, clamp(count / total * 100.0 - max(0, len(counts) - 1) * 2.5)
+
+
+def profile_wallet(wallet: str, rows: list[sqlite3.Row]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    values = [position_value(row) for row in rows]
+    resolved_rows = [row for row in rows if is_resolved(row)]
+    wins = sum(is_win(row) for row in resolved_rows)
+    losses = len(resolved_rows) - wins
+    realized = sum(safe_float(row["cash_pnl"]) for row in resolved_rows)
+    unrealized = sum(safe_float(row["cash_pnl"]) for row in rows if not is_resolved(row))
+    total_pnl = realized + unrealized
+    deployed = sum(values)
+    roi = total_pnl / deployed * 100.0 if deployed else 0.0
+    hit_rate = wins / len(resolved_rows) * 100.0 if resolved_rows else 0.0
+    category_counts = Counter(infer_category(str(row["title"] or "")) for row in rows)
+    primary, specialization_value = specialization(category_counts)
+    consistency = consistency_score([safe_float(row["cash_pnl"]) for row in resolved_rows], hit_rate)
+    discipline = sizing_discipline(values)
+    average_value = statistics.fmean(values) if values else 0.0
+    conviction = clamp(
+        logarithmic_score(deployed, 1_000_000.0) * 0.55
+        + logarithmic_score(average_value, 100_000.0) * 0.45
     )
-    activity_rank = percentile_ranks(
-        {
-            w: math.log1p(item["trades"] + item["markets"])
-            for w, item in totals.items()
+    activity = logarithmic_score(len(rows), 100.0)
+    entries = [safe_float(row["average_price"]) for row in rows if row["average_price"] is not None]
+    currents = [safe_float(row["current_price"]) for row in rows if row["current_price"] is not None]
+    quality_flags = [
+        bool(resolved_rows), deployed > 0, bool(entries), bool(currents),
+        any(abs(safe_float(row["cash_pnl"])) > 0 for row in rows),
+        len(rows) >= 5, len(resolved_rows) >= 5,
+        any(category != "OTHER" for category in category_counts),
+    ]
+    quality = 100.0 * sum(quality_flags) / len(quality_flags)
+    profitability = clamp(
+        logarithmic_score(max(total_pnl, 0.0), 500_000.0) * 0.55
+        + clamp(max(roi, 0.0)) * 0.45
+    )
+    score = clamp(
+        profitability * 0.24 + hit_rate * 0.18 + consistency * 0.16
+        + conviction * 0.13 + discipline * 0.09 + specialization_value * 0.08
+        + activity * 0.06 + quality * 0.06
+    )
+    timestamps = [str(row["observed_at"]) for row in rows if row["observed_at"]]
+    evidence = {
+        "profitability_score": round(profitability, 4),
+        "category_distribution": dict(category_counts),
+        "source_table": "positions",
+        "resolved_inference_used": any(row["resolved_flag"] is None for row in rows),
+        "win_inference_used": any(row["won_flag"] is None for row in rows),
+    }
+    profile = {
+        "wallet": wallet, "wallet_score": round(score, 4), "wallet_grade": grade(score),
+        "elite_status": status(score, len(resolved_rows), total_pnl, quality),
+        "total_positions": len(rows), "resolved_positions": len(resolved_rows),
+        "winning_positions": wins, "losing_positions": losses,
+        "realized_pnl": round(realized, 6), "unrealized_pnl": round(unrealized, 6),
+        "total_pnl": round(total_pnl, 6), "deployed_capital": round(deployed, 6),
+        "roi_percent": round(roi, 6), "hit_rate": round(hit_rate, 4),
+        "consistency_score": round(consistency, 4),
+        "conviction_score": round(conviction, 4),
+        "sizing_discipline_score": round(discipline, 4),
+        "specialization_score": round(specialization_value, 4),
+        "activity_score": round(activity, 4), "data_quality_score": round(quality, 4),
+        "primary_category": primary, "category_count": len(category_counts),
+        "average_position_value": round(average_value, 6),
+        "largest_position_value": round(max(values, default=0.0), 6),
+        "average_entry_price": round(statistics.fmean(entries), 6) if entries else None,
+        "average_current_price": round(statistics.fmean(currents), 6) if currents else None,
+        "first_seen_at": min(timestamps, default=None),
+        "last_seen_at": max(timestamps, default=None),
+        "evidence": evidence,
+    }
+    profile["profile_checksum"] = checksum(profile)
+
+    category_profiles = []
+    for category in category_counts:
+        subset = [row for row in rows if infer_category(str(row["title"] or "")) == category]
+        resolved_subset = [row for row in subset if is_resolved(row)]
+        category_wins = sum(is_win(row) for row in resolved_subset)
+        category_values = [position_value(row) for row in subset]
+        category_capital = sum(category_values)
+        category_pnl = sum(safe_float(row["cash_pnl"]) for row in subset)
+        category_roi = category_pnl / category_capital * 100.0 if category_capital else 0.0
+        category_hit = category_wins / len(resolved_subset) * 100.0 if resolved_subset else 0.0
+        category_score = clamp(
+            category_hit * 0.35 + clamp(max(category_roi, 0.0)) * 0.25
+            + logarithmic_score(max(category_pnl, 0.0), 250_000.0) * 0.20
+            + logarithmic_score(len(subset), 40.0) * 0.20
+        )
+        stamps = [str(row["observed_at"]) for row in subset if row["observed_at"]]
+        item = {
+            "wallet": wallet, "category": category, "position_count": len(subset),
+            "resolved_positions": len(resolved_subset), "winning_positions": category_wins,
+            "losing_positions": len(resolved_subset) - category_wins,
+            "total_pnl": round(category_pnl, 6), "deployed_capital": round(category_capital, 6),
+            "roi_percent": round(category_roi, 6), "hit_rate": round(category_hit, 4),
+            "category_score": round(category_score, 4), "category_grade": grade(category_score),
+            "first_seen_at": min(stamps, default=None), "last_seen_at": max(stamps, default=None),
+            "evidence": {"share_of_wallet_activity": round(len(subset) / len(rows), 6)},
         }
-    )
-    capital_rank = percentile_ranks(
-        {w: math.log1p(item["capital"]) for w, item in totals.items()}
-    )
+        item["profile_checksum"] = checksum(item)
+        category_profiles.append(item)
+    return profile, category_profiles
 
-    wallet_rows: list[dict[str, Any]] = []
-    category_rows: list[dict[str, Any]] = []
 
-    for wallet, aggregate in wallets.items():
-        item = totals[wallet]
-
-        profitability_evidence = int(item["pnl"] is not None) + int(
-            item["roi"] is not None
-        )
-        if profitability_evidence == 2:
-            profitability = 0.55 * pnl_rank[wallet] + 0.45 * roi_rank[wallet]
-        elif item["pnl"] is not None:
-            profitability = pnl_rank[wallet]
-        elif item["roi"] is not None:
-            profitability = roi_rank[wallet]
-        else:
-            profitability = 45.0
-
-        consistency = win_rank[wallet] if item["win_rate"] is not None else 45.0
-        experience = (
-            0.65 * resolved_rank[wallet] + 0.35 * activity_rank[wallet]
-        )
-        activity = 0.65 * activity_rank[wallet] + 0.35 * capital_rank[wallet]
-
-        total_category_trades = sum(
-            category.trade_count for category in aggregate.categories.values()
-        )
-        category_scores_local: list[tuple[str, float, float]] = []
-
-        for category, category_agg in aggregate.categories.items():
-            share = (
-                category_agg.trade_count / total_category_trades
-                if total_category_trades else 0.0
-            )
-            category_roi = average(category_agg.roi_values)
-            category_win = average(category_agg.win_rates)
-
-            evidence = min(
-                100.0,
-                12.0 * math.log1p(category_agg.trade_count)
-                + 15.0 * math.log1p(category_agg.resolved_count)
-                + (15.0 if category_roi is not None else 0.0)
-                + (15.0 if category_win is not None else 0.0),
-            )
-
-            category_performance = profitability
-            if category_roi is not None:
-                category_performance = (
-                    0.65 * category_performance
-                    + 0.35 * max(0.0, min(100.0, 50.0 + category_roi))
-                )
-            if category_win is not None:
-                category_performance = (
-                    0.65 * category_performance
-                    + 0.35 * max(0.0, min(100.0, category_win))
-                )
-
-            specialization_bonus = min(12.0, share * 15.0)
-            category_score = max(
-                0.0,
-                min(
-                    100.0,
-                    0.55 * category_performance
-                    + 0.25 * consistency
-                    + 0.20 * experience
-                    + specialization_bonus,
-                ),
-            )
-
-            category_confidence = min(
-                100.0,
-                0.55 * evidence
-                + 0.25 * min(100.0, aggregate.observed_rows * 2.0)
-                + 0.20 * min(100.0, len(category_agg.markets) * 4.0),
-            )
-
-            category_scores_local.append(
-                (category, category_score, category_confidence)
-            )
-            category_rows.append(
-                {
-                    "wallet": wallet,
-                    "category": category,
-                    "category_score": category_score,
-                    "category_grade": grade(category_score, category_confidence),
-                    "confidence_score": category_confidence,
-                    "confidence_level": confidence_label(category_confidence),
-                    "trade_count": category_agg.trade_count,
-                    "unique_markets": len(category_agg.markets),
-                    "resolved_markets": category_agg.resolved_count,
-                    "capital_observed": category_agg.capital,
-                    "average_roi": category_roi,
-                    "win_rate": category_win,
-                    "specialization_share": share,
-                    "evidence_status": (
-                        "VALIDATED"
-                        if category_confidence >= 65
-                        else "DEVELOPING"
-                        if category_confidence >= 35
-                        else "PROVISIONAL"
-                    ),
-                }
-            )
-
-        if category_scores_local:
-            best_category, best_category_score, _ = max(
-                category_scores_local,
-                key=lambda row: (row[1], row[2]),
-            )
-            specialization = max(
-                45.0,
-                min(
-                    100.0,
-                    best_category_score
-                    + min(8.0, len(category_scores_local) * 0.5),
-                ),
-            )
-        else:
-            best_category = None
-            best_category_score = None
-            specialization = 40.0
-
-        data_fields = sum(
-            value is not None
-            for value in (
-                item["pnl"], item["roi"], item["win_rate"],
-            )
-        )
-        confidence = min(
-            100.0,
-            8.0 * data_fields
-            + 18.0 * math.log1p(item["resolved"])
-            + 7.0 * math.log1p(item["markets"])
-            + 4.0 * math.log1p(item["trades"])
-            + min(15.0, len(aggregate.sources) * 4.0),
-        )
-
-        overall = (
-            0.30 * profitability
-            + 0.22 * consistency
-            + 0.20 * experience
-            + 0.13 * activity
-            + 0.15 * specialization
-        )
-
-        # Confidence shrinkage keeps sparse-history wallets from appearing elite.
-        shrinkage = min(1.0, 0.40 + confidence / 100.0 * 0.60)
-        overall = 50.0 + (overall - 50.0) * shrinkage
-        overall = max(0.0, min(100.0, overall))
-
-        wallet_rows.append(
-            {
-                "wallet": wallet,
-                "overall_score": overall,
-                "elite_grade": grade(overall, confidence),
-                "confidence_score": confidence,
-                "confidence_level": confidence_label(confidence),
-                "profitability_score": profitability,
-                "consistency_score": consistency,
-                "experience_score": experience,
-                "activity_score": activity,
-                "specialization_score": specialization,
-                "total_pnl": item["pnl"],
-                "average_roi": item["roi"],
-                "win_rate": item["win_rate"],
-                "resolved_markets": item["resolved"],
-                "trade_count": item["trades"],
-                "unique_markets": item["markets"],
-                "capital_observed": item["capital"],
-                "best_category": best_category,
-                "best_category_score": best_category_score,
-                "source_count": len(aggregate.sources),
-                "source_tables_json": json.dumps(sorted(aggregate.sources)),
-            }
-        )
-
-    wallet_rows.sort(
-        key=lambda row: (
-            row["overall_score"],
-            row["confidence_score"],
+def upsert_profile(connection: sqlite3.Connection, profile: dict[str, Any], categories: list[dict[str, Any]], run_id: str, observed_at: str) -> str:
+    old = connection.execute(
+        "SELECT profile_checksum, first_profiled_at FROM elite_wallet_profiles WHERE wallet=?",
+        (profile["wallet"],),
+    ).fetchone()
+    state = "created" if old is None else ("updated" if old["profile_checksum"] != profile["profile_checksum"] else "unchanged")
+    first_profiled = old["first_profiled_at"] if old else observed_at
+    connection.execute(
+        """INSERT INTO elite_wallet_profiles (
+            wallet, profile_checksum, wallet_score, wallet_grade, elite_status,
+            total_positions, resolved_positions, winning_positions, losing_positions,
+            realized_pnl, unrealized_pnl, total_pnl, deployed_capital, roi_percent,
+            hit_rate, consistency_score, conviction_score, sizing_discipline_score,
+            specialization_score, activity_score, data_quality_score, primary_category,
+            category_count, average_position_value, largest_position_value,
+            average_entry_price, average_current_price, first_seen_at, last_seen_at,
+            model_version, first_profiled_at, last_profiled_at, last_run_id, evidence_json
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(wallet) DO UPDATE SET
+            profile_checksum=excluded.profile_checksum, wallet_score=excluded.wallet_score,
+            wallet_grade=excluded.wallet_grade, elite_status=excluded.elite_status,
+            total_positions=excluded.total_positions, resolved_positions=excluded.resolved_positions,
+            winning_positions=excluded.winning_positions, losing_positions=excluded.losing_positions,
+            realized_pnl=excluded.realized_pnl, unrealized_pnl=excluded.unrealized_pnl,
+            total_pnl=excluded.total_pnl, deployed_capital=excluded.deployed_capital,
+            roi_percent=excluded.roi_percent, hit_rate=excluded.hit_rate,
+            consistency_score=excluded.consistency_score, conviction_score=excluded.conviction_score,
+            sizing_discipline_score=excluded.sizing_discipline_score,
+            specialization_score=excluded.specialization_score, activity_score=excluded.activity_score,
+            data_quality_score=excluded.data_quality_score, primary_category=excluded.primary_category,
+            category_count=excluded.category_count, average_position_value=excluded.average_position_value,
+            largest_position_value=excluded.largest_position_value,
+            average_entry_price=excluded.average_entry_price,
+            average_current_price=excluded.average_current_price,
+            first_seen_at=excluded.first_seen_at, last_seen_at=excluded.last_seen_at,
+            model_version=excluded.model_version, last_profiled_at=excluded.last_profiled_at,
+            last_run_id=excluded.last_run_id, evidence_json=excluded.evidence_json""",
+        (
+            profile["wallet"], profile["profile_checksum"], profile["wallet_score"],
+            profile["wallet_grade"], profile["elite_status"], profile["total_positions"],
+            profile["resolved_positions"], profile["winning_positions"], profile["losing_positions"],
+            profile["realized_pnl"], profile["unrealized_pnl"], profile["total_pnl"],
+            profile["deployed_capital"], profile["roi_percent"], profile["hit_rate"],
+            profile["consistency_score"], profile["conviction_score"],
+            profile["sizing_discipline_score"], profile["specialization_score"],
+            profile["activity_score"], profile["data_quality_score"],
+            profile["primary_category"], profile["category_count"],
+            profile["average_position_value"], profile["largest_position_value"],
+            profile["average_entry_price"], profile["average_current_price"],
+            profile["first_seen_at"], profile["last_seen_at"], ENGINE_VERSION,
+            first_profiled, observed_at, run_id, json.dumps(profile["evidence"], sort_keys=True),
         ),
-        reverse=True,
     )
-    category_rows.sort(
-        key=lambda row: (
-            row["category"],
-            -row["category_score"],
-            -row["confidence_score"],
-        )
-    )
-    return wallet_rows, category_rows
-
-
-def persist(
-    connection: sqlite3.Connection,
-    run_id: str,
-    wallet_rows: list[dict[str, Any]],
-    category_rows: list[dict[str, Any]],
-    calculated_at: str,
-) -> None:
-    connection.execute("DELETE FROM elite_wallet_category_intelligence")
-
-    wallet_sql = """
-    INSERT INTO elite_wallet_intelligence (
-        wallet, overall_score, elite_grade, confidence_score,
-        confidence_level, profitability_score, consistency_score,
-        experience_score, activity_score, specialization_score,
-        total_pnl, average_roi, win_rate, resolved_markets,
-        trade_count, unique_markets, capital_observed, best_category,
-        best_category_score, source_count, source_tables_json,
-        methodology_version, calculated_at
-    ) VALUES (
-        :wallet, :overall_score, :elite_grade, :confidence_score,
-        :confidence_level, :profitability_score, :consistency_score,
-        :experience_score, :activity_score, :specialization_score,
-        :total_pnl, :average_roi, :win_rate, :resolved_markets,
-        :trade_count, :unique_markets, :capital_observed, :best_category,
-        :best_category_score, :source_count, :source_tables_json,
-        :methodology_version, :calculated_at
-    )
-    ON CONFLICT(wallet) DO UPDATE SET
-        overall_score=excluded.overall_score,
-        elite_grade=excluded.elite_grade,
-        confidence_score=excluded.confidence_score,
-        confidence_level=excluded.confidence_level,
-        profitability_score=excluded.profitability_score,
-        consistency_score=excluded.consistency_score,
-        experience_score=excluded.experience_score,
-        activity_score=excluded.activity_score,
-        specialization_score=excluded.specialization_score,
-        total_pnl=excluded.total_pnl,
-        average_roi=excluded.average_roi,
-        win_rate=excluded.win_rate,
-        resolved_markets=excluded.resolved_markets,
-        trade_count=excluded.trade_count,
-        unique_markets=excluded.unique_markets,
-        capital_observed=excluded.capital_observed,
-        best_category=excluded.best_category,
-        best_category_score=excluded.best_category_score,
-        source_count=excluded.source_count,
-        source_tables_json=excluded.source_tables_json,
-        methodology_version=excluded.methodology_version,
-        calculated_at=excluded.calculated_at
-    """
-
-    for row in wallet_rows:
-        payload = dict(row)
-        payload["methodology_version"] = ENGINE_VERSION
-        payload["calculated_at"] = calculated_at
-        connection.execute(wallet_sql, payload)
+    if state in {"created", "updated"}:
         connection.execute(
-            """
-            INSERT INTO elite_wallet_intelligence_history (
-                run_id, wallet, overall_score, elite_grade,
-                confidence_score, calculated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
+            """INSERT OR IGNORE INTO elite_wallet_profile_history (
+                wallet, observed_at, profile_checksum, wallet_score, wallet_grade,
+                elite_status, total_positions, resolved_positions, winning_positions,
+                losing_positions, total_pnl, deployed_capital, roi_percent, hit_rate,
+                consistency_score, conviction_score, sizing_discipline_score,
+                specialization_score, activity_score, data_quality_score,
+                primary_category, evidence_json, run_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
+                profile["wallet"], observed_at, profile["profile_checksum"],
+                profile["wallet_score"], profile["wallet_grade"], profile["elite_status"],
+                profile["total_positions"], profile["resolved_positions"],
+                profile["winning_positions"], profile["losing_positions"],
+                profile["total_pnl"], profile["deployed_capital"], profile["roi_percent"],
+                profile["hit_rate"], profile["consistency_score"], profile["conviction_score"],
+                profile["sizing_discipline_score"], profile["specialization_score"],
+                profile["activity_score"], profile["data_quality_score"],
+                profile["primary_category"], json.dumps(profile["evidence"], sort_keys=True),
                 run_id,
-                row["wallet"],
-                row["overall_score"],
-                row["elite_grade"],
-                row["confidence_score"],
-                calculated_at,
             ),
         )
-
-    category_sql = """
-    INSERT INTO elite_wallet_category_intelligence (
-        wallet, category, category_score, category_grade,
-        confidence_score, confidence_level, trade_count,
-        unique_markets, resolved_markets, capital_observed,
-        average_roi, win_rate, specialization_share,
-        evidence_status, calculated_at
-    ) VALUES (
-        :wallet, :category, :category_score, :category_grade,
-        :confidence_score, :confidence_level, :trade_count,
-        :unique_markets, :resolved_markets, :capital_observed,
-        :average_roi, :win_rate, :specialization_share,
-        :evidence_status, :calculated_at
-    )
-    """
-    for row in category_rows:
-        payload = dict(row)
-        payload["calculated_at"] = calculated_at
-        connection.execute(category_sql, payload)
-
-
-def print_sources(title: str, sources: list[dict[str, Any]]) -> None:
-    print()
-    print(title)
-    print("-" * 118)
-    if not sources:
-        print("None discovered")
-        return
-    for source in sources:
-        metrics = [
-            key for key in (
-                "pnl", "roi", "win_rate", "resolved", "trade_count",
-                "market", "title", "category", "capital",
-            )
-            if source.get(key) is not None
-        ]
-        print(
-            f"{source['rows']:>10,} rows | {source['table']:<45} "
-            f"| {', '.join(metrics)}"
+    for item in categories:
+        connection.execute(
+            """INSERT INTO elite_wallet_category_profiles (
+                wallet, category, profile_checksum, position_count, resolved_positions,
+                winning_positions, losing_positions, total_pnl, deployed_capital,
+                roi_percent, hit_rate, category_score, category_grade, first_seen_at,
+                last_seen_at, last_run_id, evidence_json
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(wallet, category) DO UPDATE SET
+                profile_checksum=excluded.profile_checksum, position_count=excluded.position_count,
+                resolved_positions=excluded.resolved_positions,
+                winning_positions=excluded.winning_positions,
+                losing_positions=excluded.losing_positions, total_pnl=excluded.total_pnl,
+                deployed_capital=excluded.deployed_capital, roi_percent=excluded.roi_percent,
+                hit_rate=excluded.hit_rate, category_score=excluded.category_score,
+                category_grade=excluded.category_grade, first_seen_at=excluded.first_seen_at,
+                last_seen_at=excluded.last_seen_at, last_run_id=excluded.last_run_id,
+                evidence_json=excluded.evidence_json""",
+            (
+                item["wallet"], item["category"], item["profile_checksum"],
+                item["position_count"], item["resolved_positions"],
+                item["winning_positions"], item["losing_positions"], item["total_pnl"],
+                item["deployed_capital"], item["roi_percent"], item["hit_rate"],
+                item["category_score"], item["category_grade"], item["first_seen_at"],
+                item["last_seen_at"], run_id, json.dumps(item["evidence"], sort_keys=True),
+            ),
         )
+    return state
+
+
+def publish_profile_event(connection: sqlite3.Connection, profile: dict[str, Any]) -> bool:
+    key = build_deduplication_key(
+        event_type="EliteWalletProfiled", aggregate_type="wallet",
+        aggregate_id=profile["wallet"], state_value=profile["profile_checksum"]
+    )
+    event = PlatformEvent.create(
+        event_type="EliteWalletProfiled", source_engine="elite_wallet_intelligence_engine",
+        source_version=ENGINE_VERSION, aggregate_type="wallet",
+        aggregate_id=profile["wallet"], payload=profile, deduplication_key=key
+    )
+    return publish_event(connection, event)
+
+
+def print_board(connection: sqlite3.Connection, limit: int = 20) -> None:
+    rows = connection.execute(
+        """SELECT rank, wallet, wallet_score, wallet_grade, elite_status,
+        resolved_positions, total_pnl, roi_percent, hit_rate, consistency_score,
+        primary_category, data_quality_score
+        FROM ranked_elite_wallets ORDER BY rank LIMIT ?""", (limit,)
+    ).fetchall()
+    print("\nELITE WALLET INTELLIGENCE BOARD")
+    print("-" * 154)
+    for row in rows:
+        wallet = str(row["wallet"])
+        short = wallet if len(wallet) <= 18 else f"{wallet[:10]}...{wallet[-6:]}"
+        print(
+            f"{row['rank']:>3} {row['wallet_score']:>6.2f} {row['wallet_grade']:<5} "
+            f"{row['elite_status']:<10} R:{row['resolved_positions']:<4} "
+            f"PnL:${row['total_pnl']:>12,.2f} ROI:{row['roi_percent']:>8.2f}% "
+            f"H:{row['hit_rate']:>6.2f} C:{row['consistency_score']:>6.2f} "
+            f"D:{row['data_quality_score']:>6.2f} {row['primary_category']:<10} {short}"
+        )
+    print("-" * 154)
 
 
 def main() -> int:
-    started_at = utc_now()
-    run_id = f"elite-wallet:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}:{uuid.uuid4().hex[:8]}"
-    warnings: list[str] = []
-
-    print("=" * 118)
-    print(f"ELITE WALLET INTELLIGENCE ENGINE v{ENGINE_VERSION}")
-    print("=" * 118)
-    print(f"Run ID:   {run_id}")
-    print(f"Database: {DATABASE_PATH}")
-
     if not DATABASE_PATH.exists():
-        print("ERROR: Database not found.", file=sys.stderr)
+        print(f"ERROR: Database not found: {DATABASE_PATH}", file=sys.stderr)
         return 1
-
+    run_id = f"elite-wallet:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}:{uuid.uuid4().hex[:8]}"
+    counts = {"wallets": 0, "created": 0, "updated": 0, "unchanged": 0, "events": 0}
     with sqlite3.connect(DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=30000")
         ensure_schema(connection)
-
-        performance_sources, activity_sources = discover_sources(connection)
-        print_sources("PERFORMANCE SOURCES", performance_sources)
-        print_sources("ACTIVITY / POSITION SOURCES", activity_sources)
-
-        if not performance_sources and not activity_sources:
-            raise RuntimeError(
-                "No compatible wallet performance, trade, activity, or position tables found."
-            )
-        if not performance_sources:
-            warnings.append(
-                "No dedicated performance source found; all grades are provisional."
-            )
-
         connection.execute(
-            """
-            INSERT INTO elite_wallet_intelligence_runs (
-                run_id, engine_version, started_at, status,
-                performance_sources_json, activity_sources_json,
-                warnings_json
-            ) VALUES (?, ?, ?, 'RUNNING', ?, ?, ?)
-            """,
-            (
-                run_id,
-                ENGINE_VERSION,
-                started_at,
-                json.dumps(
-                    [source["table"] for source in performance_sources]
-                ),
-                json.dumps(
-                    [source["table"] for source in activity_sources]
-                ),
-                json.dumps(warnings),
-            ),
+            "INSERT INTO elite_wallet_intelligence_runs "
+            "(run_id, engine_version, started_at, status) VALUES (?, ?, ?, 'RUNNING')",
+            (run_id, ENGINE_VERSION, utc_now()),
         )
         connection.commit()
-
-        wallets = load_data(connection, performance_sources, activity_sources)
-        wallet_rows, category_rows = score_wallets(wallets)
-        calculated_at = utc_now()
-
-        persist(
-            connection,
-            run_id,
-            wallet_rows,
-            category_rows,
-            calculated_at,
-        )
-
-        connection.execute(
-            """
-            UPDATE elite_wallet_intelligence_runs
-            SET completed_at=?,
-                status='SUCCESS',
-                wallets_scored=?,
-                category_profiles=?,
-                warnings_json=?
-            WHERE run_id=?
-            """,
-            (
-                calculated_at,
-                len(wallet_rows),
-                len(category_rows),
-                json.dumps(warnings),
-                run_id,
-            ),
-        )
-        connection.commit()
-
-    print()
-    print("TOP ELITE WALLET BOARD")
-    print("-" * 118)
-    for index, row in enumerate(wallet_rows[:25], start=1):
-        wallet_display = row["wallet"]
-        if len(wallet_display) > 20:
-            wallet_display = wallet_display[:10] + "..." + wallet_display[-8:]
-        print(
-            f"{index:>2}. {row['elite_grade']:<3} "
-            f"Score={row['overall_score']:>6.2f} "
-            f"Conf={row['confidence_score']:>6.2f} "
-            f"{row['confidence_level']:<11} "
-            f"Markets={row['unique_markets']:>5} "
-            f"Best={str(row['best_category'] or '-'): <18} "
-            f"| {wallet_display}"
-        )
-
-    grade_counts: dict[str, int] = defaultdict(int)
-    for row in wallet_rows:
-        grade_counts[row["elite_grade"]] += 1
-
-    print()
-    print("ELITE WALLET INTELLIGENCE HEALTH SUMMARY")
-    print("-" * 118)
-    print("Status:             SUCCESS")
-    print(f"Wallets scored:     {len(wallet_rows):,}")
-    print(f"Category profiles:  {len(category_rows):,}")
-    print(f"S+ wallets:         {grade_counts['S+']:,}")
-    print(f"S wallets:          {grade_counts['S']:,}")
-    print(f"A+ wallets:         {grade_counts['A+']:,}")
-    print(f"A wallets:          {grade_counts['A']:,}")
-    print(f"Warnings:           {len(warnings):,}")
-    for warning in warnings:
-        print(f"  - {warning}")
-    print("=" * 118)
-    print("ELITE WALLET INTELLIGENCE COMPLETE")
-    print("=" * 118)
+        try:
+            grouped = defaultdict(list)
+            for row in load_positions(connection):
+                grouped[str(row["wallet"])].append(row)
+            counts["wallets"] = len(grouped)
+            observed_at = utc_now()
+            for wallet, rows in grouped.items():
+                profile, categories = profile_wallet(wallet, rows)
+                state = upsert_profile(connection, profile, categories, run_id, observed_at)
+                counts[state] += 1
+                if state in {"created", "updated"}:
+                    connection.commit()
+                    counts["events"] += int(publish_profile_event(connection, profile))
+            connection.execute(
+                """UPDATE elite_wallet_intelligence_runs SET completed_at=?,
+                status='SUCCESS', wallets_read=?, profiles_created=?,
+                profiles_updated=?, profiles_unchanged=?, events_published=?
+                WHERE run_id=?""",
+                (utc_now(), counts["wallets"], counts["created"], counts["updated"],
+                 counts["unchanged"], counts["events"], run_id),
+            )
+            connection.commit()
+            print_board(connection)
+        except Exception as error:
+            connection.rollback()
+            connection.execute(
+                "UPDATE elite_wallet_intelligence_runs SET completed_at=?, "
+                "status='FAILED', error_message=? WHERE run_id=?",
+                (utc_now(), str(error)[:4000], run_id),
+            )
+            connection.commit()
+            raise
+    print("\n" + "=" * 80)
+    print(f"ELITE WALLET INTELLIGENCE ENGINE v{ENGINE_VERSION}")
+    print("=" * 80)
+    print(f"Wallets read:              {counts['wallets']:,}")
+    print(f"Profiles created:          {counts['created']:,}")
+    print(f"Profiles updated:          {counts['updated']:,}")
+    print(f"Profiles unchanged:        {counts['unchanged']:,}")
+    print(f"Events published:          {counts['events']:,}")
+    print("=" * 80)
     return 0
 
 
