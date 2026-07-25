@@ -1,0 +1,10 @@
+{
+  "minimum_wallets": 2,
+  "strong_consensus_score": 70.0,
+  "strong_consensus_agreement": 0.5,
+  "high_disagreement_threshold": 0.45,
+  "watch_score": 50.0,
+  "capital_log_divisor": 7.0,
+  "wallet_count_full_score": 8,
+  "board_limit": 25
+}

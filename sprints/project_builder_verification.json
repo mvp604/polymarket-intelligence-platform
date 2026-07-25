@@ -1,0 +1,17 @@
+﻿{
+    "actions":  [
+                    {
+                        "paths":  [
+                                      "tools/project_builder.py"
+                                  ],
+                        "type":  "compile_python"
+                    },
+                    {
+                        "directory":  "tests",
+                        "pattern":  "test_project_builder.py",
+                        "type":  "run_tests"
+                    }
+                ],
+    "name":  "Project Builder Verification",
+    "version":  "0.8.1"
+}

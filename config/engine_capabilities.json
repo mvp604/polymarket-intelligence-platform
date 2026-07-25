@@ -1,0 +1,78 @@
+{
+  "engines": {
+    "elite_wallet_intelligence_v2": {
+      "tables": {
+        "positions": ["wallet"],
+        "elite_wallet_profiles": [
+          "wallet",
+          "eligibility_status",
+          "elite_tier",
+          "overall_grade",
+          "trust_score",
+          "skill_score",
+          "repeatability_score",
+          "confidence_adjusted_score",
+          "consensus_eligible",
+          "elite_eligible"
+        ],
+        "elite_wallet_profile_history": [
+          "wallet",
+          "confidence_adjusted_score",
+          "profile_checksum"
+        ],
+        "elite_wallet_category_profiles": [
+          "wallet",
+          "category",
+          "confidence_adjusted_score"
+        ]
+      },
+      "views": [
+        "ranked_elite_wallets",
+        "ranked_elite_wallet_categories",
+        "elite_wallet_trends"
+      ]
+    },
+    "smart_money_intelligence_v1": {
+      "tables": {
+        "positions": ["wallet", "market_id", "outcome", "current_value"],
+        "elite_wallet_profiles": [
+          "wallet",
+          "confidence_adjusted_score",
+          "influence_weight",
+          "consensus_eligible",
+          "elite_eligible"
+        ],
+        "smart_money_market_signals": [
+          "market_id",
+          "outcome",
+          "heat_score",
+          "signal_status"
+        ],
+        "smart_money_signal_history": [
+          "market_id",
+          "outcome",
+          "signal_checksum"
+        ]
+      },
+      "views": [
+        "ranked_smart_money_signals",
+        "smart_money_disagreement_board",
+        "smart_money_signal_trends"
+      ]
+    },
+    "opportunity_enrichment_engine": {
+      "tables": {
+        "opportunity_enrichment_current": [],
+        "platform_events": []
+      },
+      "views": []
+    },
+    "institutional_review_engine": {
+      "tables": {
+        "institutional_reviews": [],
+        "platform_events": []
+      },
+      "views": []
+    }
+  }
+}

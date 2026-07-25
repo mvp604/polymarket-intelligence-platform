@@ -1,0 +1,23 @@
+{
+  "name": "Polymarket Intelligence Platform Database Schema Audit",
+  "version": "0.5.0-audit.1",
+  "automated": true,
+  "manual_find_replace_required": false,
+  "database_access": "read-only",
+  "database_migrations": [],
+  "generated_outputs": [
+    "docs/database_schema_specification_v1.md",
+    "artifacts/database_schema_specification_v1.json"
+  ],
+  "installed_files": [
+    "scripts/audit_database_schema.py",
+    "tests/schema_audit/__init__.py",
+    "tests/schema_audit/test_schema_audit.py",
+    "docs/v0_5_0_schema_audit_release_notes.md",
+    "artifacts/v0_5_0_schema_audit_manifest.json"
+  ],
+  "rollback": {
+    "supported": true,
+    "backup_directory_pattern": "backups/platform_v0_5_0_schema_audit_*"
+  }
+}

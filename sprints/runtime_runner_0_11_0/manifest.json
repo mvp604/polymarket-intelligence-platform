@@ -1,0 +1,53 @@
+{
+    "commands":  [
+                     [
+                         "python",
+                         "-m",
+                         "py_compile",
+                         "src/runtime/runner.py",
+                         "src/runtime/planner.py",
+                         "src/runtime/__init__.py",
+                         "tests/runtime/test_runner.py"
+                     ],
+                     [
+                         "python",
+                         "-m",
+                         "unittest",
+                         "tests.runtime.test_runner",
+                         "tests.runtime.test_planner",
+                         "tests.runtime.test_dependency_graph",
+                         "tests.runtime.test_engine",
+                         "tests.runtime.test_registry",
+                         "-v"
+                     ],
+                     [
+                         "python",
+                         "-m",
+                         "unittest",
+                         "discover",
+                         "-s",
+                         "tests",
+                         "-v"
+                     ],
+                     [
+                         "python",
+                         "-c",
+                         "from src.runtime import EngineExecutionResult, EngineStatus, ErrorPolicy, Runner, RuntimeReport; print(\u0027Runtime Runner imports validated.\u0027)"
+                     ]
+                 ],
+    "name":  "runtime_runner_0_11_0",
+    "files":  [
+                  {
+                      "target":  "src/runtime/runner.py",
+                      "source":  "payload/src/runtime/runner.py"
+                  },
+                  {
+                      "target":  "src/runtime/__init__.py",
+                      "source":  "payload/src/runtime/__init__.py"
+                  },
+                  {
+                      "target":  "tests/runtime/test_runner.py",
+                      "source":  "payload/tests/runtime/test_runner.py"
+                  }
+              ]
+}

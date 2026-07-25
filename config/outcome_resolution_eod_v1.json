@@ -1,0 +1,12 @@
+{
+  "timezone": "America/Vancouver",
+  "report_hour_local": 23,
+  "report_minute_local": 45,
+  "include_no_action_results": true,
+  "minimum_actionable_grade": "B",
+  "resolution_sources": [
+    "Polymarket API",
+    "Manual Review",
+    "Official Event Source"
+  ]
+}

@@ -10,17 +10,32 @@ from typing import Any
 
 import requests
 
-from change_detector import compare_positions, display_changes
-from database import (
-    add_tracked_wallet,
-    count_wallet_scans,
-    create_tables,
-    get_active_wallets,
-    get_positions_for_scan,
-    get_previous_scan_id,
-    save_wallet_scan,
-    update_tracked_wallet_scan_status,
-)
+try:
+    from .change_detector import compare_positions, display_changes
+    from .database import (
+        add_tracked_wallet,
+        count_wallet_scans,
+        create_tables,
+        get_active_wallets,
+        get_positions_for_scan,
+        get_previous_scan_id,
+        save_wallet_scan,
+        update_tracked_wallet_scan_status,
+    )
+except ImportError:
+    # Preserve support for direct execution:
+    # python .\\src\\wallet_tracker.py
+    from change_detector import compare_positions, display_changes
+    from database import (
+        add_tracked_wallet,
+        count_wallet_scans,
+        create_tables,
+        get_active_wallets,
+        get_positions_for_scan,
+        get_previous_scan_id,
+        save_wallet_scan,
+        update_tracked_wallet_scan_status,
+    )
 
 
 DATA_API_URL = "https://data-api.polymarket.com"

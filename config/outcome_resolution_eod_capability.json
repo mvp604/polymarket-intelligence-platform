@@ -1,0 +1,37 @@
+{
+  "outcome_resolution_eod_reporting_v1": {
+    "tables": {
+      "smart_money_market_signals": [
+        "market_id",
+        "outcome",
+        "heat_score",
+        "signal_grade",
+        "signal_status"
+      ],
+      "market_resolutions": [
+        "market_id",
+        "outcome",
+        "final_result",
+        "resolution_status",
+        "resolved_at"
+      ],
+      "resolved_signal_results": [
+        "market_id",
+        "outcome",
+        "evaluation",
+        "resolved_at"
+      ],
+      "daily_intelligence_reports": [
+        "report_date",
+        "report_type",
+        "report_markdown"
+      ]
+    },
+    "views": [
+      "resolved_signal_performance",
+      "daily_signal_performance",
+      "signal_grade_performance",
+      "category_signal_performance"
+    ]
+  }
+}

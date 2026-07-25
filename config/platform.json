@@ -1,0 +1,16 @@
+{
+  "database": {
+    "path": "database/polymarket.db",
+    "busy_timeout_ms": 30000,
+    "foreign_keys": true
+  },
+  "migrations": {
+    "path": "database/migrations",
+    "checksum_validation": true,
+    "transactional": true
+  },
+  "health": {
+    "fail_on_failed_events": true,
+    "fail_on_integrity_error": true
+  }
+}

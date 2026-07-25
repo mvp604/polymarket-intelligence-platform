@@ -1,0 +1,12 @@
+{
+  "timezone": "America/Vancouver",
+  "daily_report_local_time": "23:45",
+  "weekly_report_day": "Sunday",
+  "monthly_report_day": 1,
+  "reports": [
+    "DAILY",
+    "WEEKLY",
+    "MONTHLY"
+  ],
+  "official_resolution_adapter": "src/polymarket_resolution_sync_v2.py"
+}
